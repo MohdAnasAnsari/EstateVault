@@ -74,6 +74,53 @@ export const mediaTypeEnum = pgEnum('media_type', [
   'virtual_tour',
   'document',
 ]);
+export const verificationStatusEnum = pgEnum('verification_status', [
+  'not_started',
+  'pending',
+  'changes_requested',
+  'rejected',
+  'verified',
+]);
+export const alertTypeEnum = pgEnum('alert_type', ['fraud', 'aml', 'sanctions', 'pep', 'listing']);
+export const dealRoomStatusEnum = pgEnum('deal_room_status', [
+  'interest_expressed',
+  'pending_nda',
+  'nda_signed',
+  'due_diligence',
+  'offer_submitted',
+  'offer_accepted',
+  'closed',
+]);
+export const dealRoomParticipantRoleEnum = pgEnum('deal_room_participant_role', [
+  'buyer',
+  'seller',
+  'legal_advisor',
+  'agent',
+  'admin',
+]);
+export const messageTypeEnum = pgEnum('message_type', ['text', 'file', 'system', 'nda', 'offer']);
+export const dealRoomFileCategoryEnum = pgEnum('deal_room_file_category', [
+  'asset_docs',
+  'legal',
+  'financial',
+  'offers',
+  'other',
+]);
+export const ndaStatusEnum = pgEnum('nda_status', [
+  'pending',
+  'partially_signed',
+  'signed',
+  'expired',
+  'cancelled',
+]);
+export const offerStatusEnum = pgEnum('offer_status', [
+  'submitted',
+  'countered',
+  'accepted',
+  'rejected',
+  'expired',
+  'withdrawn',
+]);
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +141,8 @@ export const users = pgTable(
     kycStatus: kycStatusEnum('kyc_status').default('pending').notNull(),
     reraOrn: varchar('rera_orn', { length: 10 }),
     reraVerified: boolean('rera_verified').default(false).notNull(),
+    nationality: varchar('nationality', { length: 100 }),
+    reraLicenseExpiry: timestamp('rera_license_expiry', { withTimezone: true }),
     preferredCurrency: varchar('preferred_currency', { length: 3 }).default('AED').notNull(),
     preferredLanguage: varchar('preferred_language', { length: 5 }).default('en').notNull(),
     publicKey: text('public_key'),
@@ -149,10 +198,17 @@ export const listings = pgTable(
       revpar?: number | null;
     }>(),
     sellerMotivation: sellerMotivationEnum('seller_motivation').default('testing_market').notNull(),
+    offPlan: boolean('off_plan').default(false).notNull(),
     titleDeedVerified: boolean('title_deed_verified').default(false).notNull(),
     titleDeedNumber: varchar('title_deed_number', { length: 50 }),
+    verificationStatus: verificationStatusEnum('verification_status').default('not_started').notNull(),
+    sellerVerificationFeedback: text('seller_verification_feedback'),
+    titleDeedDocument: jsonb('title_deed_document').$type<Record<string, unknown> | null>(),
+    nocDocument: jsonb('noc_document').$type<Record<string, unknown> | null>(),
+    encumbranceDocument: jsonb('encumbrance_document').$type<Record<string, unknown> | null>(),
     listingQualityScore: integer('listing_quality_score').default(0).notNull(),
     qualityTier: qualityTierEnum('quality_tier').default('bronze').notNull(),
+    qualityTierOverride: qualityTierEnum('quality_tier_override'),
     lastSellerConfirmation: timestamp('last_seller_confirmation', {
       withTimezone: true,
     })
@@ -162,6 +218,7 @@ export const listings = pgTable(
     interestCount: integer('interest_count').default(0).notNull(),
     daysOnMarket: integer('days_on_market').default(0).notNull(),
     aiFraudFlag: boolean('ai_fraud_flag').default(false).notNull(),
+    meilisearchIndexedAt: timestamp('meilisearch_indexed_at', { withTimezone: true }),
     embedding: vector('embedding', 1536),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -214,6 +271,86 @@ export const savedListings = pgTable(
   }),
 );
 
+export const kycSubmissions = pgTable(
+  'kyc_submissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: kycStatusEnum('status').default('submitted').notNull(),
+    jumioReference: varchar('jumio_reference', { length: 120 }),
+    documentS3Keys: jsonb('document_s3_keys').$type<Record<string, unknown>>().default({}).notNull(),
+    financialCapacityRange: varchar('financial_capacity_range', { length: 100 }),
+    assetTypeInterests: jsonb('asset_type_interests').$type<string[]>().default([]).notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    issueDate: timestamp('issue_date', { withTimezone: true }),
+    reviewReason: text('review_reason'),
+  },
+  (t) => ({
+    userIdx: index('kyc_submissions_user_idx').on(t.userId),
+    statusIdx: index('kyc_submissions_status_idx').on(t.status),
+  }),
+);
+
+export const amlScreenings = pgTable(
+  'aml_screenings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    riskScore: integer('risk_score').notNull(),
+    pepMatch: boolean('pep_match').default(false).notNull(),
+    sanctionsMatch: boolean('sanctions_match').default(false).notNull(),
+    requiresReview: boolean('requires_review').default(false).notNull(),
+    screenedAt: timestamp('screened_at', { withTimezone: true }).defaultNow().notNull(),
+    reviewerNotes: text('reviewer_notes'),
+  },
+  (t) => ({
+    userIdx: index('aml_screenings_user_idx').on(t.userId),
+    reviewIdx: index('aml_screenings_review_idx').on(t.requiresReview),
+  }),
+);
+
+export const adminAlerts = pgTable(
+  'admin_alerts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: alertTypeEnum('type').notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    targetId: uuid('target_id'),
+    details: jsonb('details').$type<Record<string, unknown>>().default({}).notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    typeIdx: index('admin_alerts_type_idx').on(t.type),
+    resolvedIdx: index('admin_alerts_resolved_idx').on(t.resolvedAt),
+  }),
+);
+
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminId: uuid('admin_id')
+      .notNull()
+      .references(() => users.id),
+    action: varchar('action', { length: 120 }).notNull(),
+    targetId: varchar('target_id', { length: 120 }).notNull(),
+    targetType: varchar('target_type', { length: 80 }).notNull(),
+    ip: varchar('ip', { length: 80 }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+    timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    adminIdx: index('audit_log_admin_idx').on(t.adminId),
+    actionIdx: index('audit_log_action_idx').on(t.action),
+  }),
+);
+
 export const exchangeRatesCache = pgTable(
   'exchange_rates_cache',
   {
@@ -228,12 +365,197 @@ export const exchangeRatesCache = pgTable(
   }),
 );
 
+export const dealRooms = pgTable(
+  'deal_rooms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    buyerId: uuid('buyer_id')
+      .notNull()
+      .references(() => users.id),
+    sellerId: uuid('seller_id')
+      .notNull()
+      .references(() => users.id),
+    agentId: uuid('agent_id').references(() => users.id),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    status: dealRoomStatusEnum('status').default('interest_expressed').notNull(),
+    ndaStatus: ndaStatusEnum('nda_status').default('pending').notNull(),
+    fullAddressRevealed: boolean('full_address_revealed').default(false).notNull(),
+    commercialDataUnlocked: boolean('commercial_data_unlocked').default(false).notNull(),
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+    stageChangedAt: timestamp('stage_changed_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    listingIdx: index('deal_rooms_listing_idx').on(t.listingId),
+    statusIdx: index('deal_rooms_status_idx').on(t.status),
+    buyerIdx: index('deal_rooms_buyer_idx').on(t.buyerId),
+    sellerIdx: index('deal_rooms_seller_idx').on(t.sellerId),
+  }),
+);
+
+export const dealRoomParticipants = pgTable(
+  'deal_room_participants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: dealRoomParticipantRoleEnum('role').notNull(),
+    pseudonym: varchar('pseudonym', { length: 80 }).notNull(),
+    identityRevealed: boolean('identity_revealed').default(false).notNull(),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  },
+  (t) => ({
+    roomIdx: index('deal_room_participants_room_idx').on(t.dealRoomId),
+    userIdx: index('deal_room_participants_user_idx').on(t.userId),
+    uniqueParticipant: uniqueIndex('deal_room_participants_unique_idx').on(t.dealRoomId, t.userId),
+  }),
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'set null' }),
+    senderPublicKey: text('sender_public_key'),
+    type: messageTypeEnum('type').default('text').notNull(),
+    ciphertext: text('ciphertext'),
+    nonce: text('nonce'),
+    contentPreview: text('content_preview'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+    deliveredTo: jsonb('delivered_to').$type<string[]>().default([]).notNull(),
+    readBy: jsonb('read_by')
+      .$type<Array<{ userId: string; readAt: string }>>()
+      .default([])
+      .notNull(),
+    reactions: jsonb('reactions')
+      .$type<Array<{ emoji: string; userId: string; createdAt: string }>>()
+      .default([])
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('messages_room_idx').on(t.dealRoomId),
+    senderIdx: index('messages_sender_idx').on(t.senderId),
+    createdIdx: index('messages_created_idx').on(t.createdAt),
+  }),
+);
+
+export const dealRoomFiles = pgTable(
+  'deal_room_files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
+    uploadedBy: uuid('uploaded_by')
+      .notNull()
+      .references(() => users.id),
+    category: dealRoomFileCategoryEnum('category').default('other').notNull(),
+    fileNameEncrypted: text('file_name_encrypted').notNull(),
+    mimeType: varchar('mime_type', { length: 255 }).notNull(),
+    s3Key: varchar('s3_key', { length: 255 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    nonce: text('nonce').notNull(),
+    wrappedKeys: jsonb('wrapped_keys').$type<Record<string, string>>().default({}).notNull(),
+    encryptedBlobBase64: text('encrypted_blob_base64'),
+    downloads: integer('downloads').default(0).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('deal_room_files_room_idx').on(t.dealRoomId),
+    uploadedByIdx: index('deal_room_files_uploaded_by_idx').on(t.uploadedBy),
+    messageIdx: index('deal_room_files_message_idx').on(t.messageId),
+    expiresIdx: index('deal_room_files_expires_idx').on(t.expiresAt),
+  }),
+);
+
+export const ndas = pgTable(
+  'ndas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    templateVersion: varchar('template_version', { length: 50 }).notNull(),
+    parties: jsonb('parties')
+      .$type<
+        Array<{
+          participantId: string;
+          pseudonym: string;
+          role: string;
+          signedAt: string | null;
+          signatureHash: string | null;
+        }>
+      >()
+      .default([])
+      .notNull(),
+    signatureHashes: jsonb('signature_hashes').$type<Record<string, string>>().default({}).notNull(),
+    status: ndaStatusEnum('status').default('pending').notNull(),
+    pdfS3Key: varchar('pdf_s3_key', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomUnique: uniqueIndex('ndas_room_unique_idx').on(t.dealRoomId),
+    statusIdx: index('ndas_status_idx').on(t.status),
+  }),
+);
+
+export const offers = pgTable(
+  'offers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    parentOfferId: uuid('parent_offer_id'),
+    senderId: uuid('sender_id')
+      .notNull()
+      .references(() => users.id),
+    senderPublicKey: text('sender_public_key').notNull(),
+    amount: decimal('amount', { precision: 20, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    conditionsCiphertext: text('conditions_ciphertext').notNull(),
+    conditionsNonce: text('conditions_nonce').notNull(),
+    status: offerStatusEnum('status').default('submitted').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('offers_room_idx').on(t.dealRoomId),
+    parentIdx: index('offers_parent_idx').on(t.parentOfferId),
+    senderIdx: index('offers_sender_idx').on(t.senderId),
+    statusIdx: index('offers_status_idx').on(t.status),
+  }),
+);
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
   listings: many(listings, { relationName: 'seller' }),
   agentListings: many(listings, { relationName: 'agent' }),
   savedListings: many(savedListings),
+  kycSubmissions: many(kycSubmissions),
+  amlScreenings: many(amlScreenings),
+  auditEntries: many(auditLog),
 }));
 
 export const listingsRelations = relations(listings, ({ one, many }) => ({
@@ -261,4 +583,16 @@ export const listingMediaRelations = relations(listingMedia, ({ one }) => ({
 export const savedListingsRelations = relations(savedListings, ({ one }) => ({
   user: one(users, { fields: [savedListings.userId], references: [users.id] }),
   listing: one(listings, { fields: [savedListings.listingId], references: [listings.id] }),
+}));
+
+export const kycSubmissionsRelations = relations(kycSubmissions, ({ one }) => ({
+  user: one(users, { fields: [kycSubmissions.userId], references: [users.id] }),
+}));
+
+export const amlScreeningsRelations = relations(amlScreenings, ({ one }) => ({
+  user: one(users, { fields: [amlScreenings.userId], references: [users.id] }),
+}));
+
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  admin: one(users, { fields: [auditLog.adminId], references: [users.id] }),
 }));

@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1776670534721,
+      "tag": "0000_mysterious_zuras",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776687000000,
+      "tag": "0001_phase2_compliance_pipeline",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,64 +1,51 @@
 import type { FastifyInstance } from 'fastify';
-import { getDb } from '@vault/db';
-import { exchangeRatesCache } from '@vault/db/schema';
-import { mockGetExchangeRate } from '@vault/mocks';
+import { CurrencyConvertQuerySchema } from '@vault/types';
 import { cacheGetOrSet, CacheKeys } from '@vault/cache';
-import { sendError } from '../lib/errors.js';
+import { mockGetExchangeRate } from '@vault/mocks';
+import { handleZodError } from '../lib/errors.js';
+import { ZodError } from 'zod';
 
-const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'SAR'];
-const MOCK = process.env['MOCK_SERVICES'] !== 'false';
+const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'SAR'] as const;
 
 export async function currencyRoutes(app: FastifyInstance) {
-  // GET /currency/rates
   app.get('/rates', async (_request, reply) => {
-    const pairs: Array<{ from: string; to: string; rate: number; fetchedAt: string }> = [];
+    const data = await Promise.all(
+      CURRENCIES.flatMap((from) =>
+        CURRENCIES.map(async (to) =>
+          cacheGetOrSet(
+            CacheKeys.exchangeRate(from, to),
+            () => mockGetExchangeRate(from, to),
+            3600,
+          ).catch(() => mockGetExchangeRate(from, to)),
+        ),
+      ),
+    );
 
-    for (const from of CURRENCIES) {
-      for (const to of CURRENCIES) {
-        const result = await cacheGetOrSet(
-          CacheKeys.exchangeRate(from, to),
-          () => mockGetExchangeRate(from, to),
-          3600, // 1 hour TTL
-        ).catch(() => mockGetExchangeRate(from, to));
-        pairs.push(result);
-      }
-    }
-
-    return reply.send({ success: true, data: pairs });
+    return reply.send({ success: true, data });
   });
 
-  // GET /currency/convert
   app.get('/convert', async (request, reply) => {
-    const { from, to, amount } = request.query as {
-      from?: string;
-      to?: string;
-      amount?: string;
-    };
+    try {
+      const query = CurrencyConvertQuerySchema.parse(request.query);
+      const rate = await cacheGetOrSet(
+        CacheKeys.exchangeRate(query.from, query.to),
+        () => mockGetExchangeRate(query.from, query.to),
+        3600,
+      ).catch(() => mockGetExchangeRate(query.from, query.to));
 
-    if (!from || !to || !amount) {
-      return sendError(reply, 400, 'MISSING_PARAMS', 'from, to, and amount are required');
+      return reply.send({
+        success: true,
+        data: {
+          from: query.from,
+          to: query.to,
+          amount: query.amount,
+          converted: Number((query.amount * rate.rate).toFixed(2)),
+          rate: rate.rate,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ZodError) return handleZodError(reply, error);
+      throw error;
     }
-
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount)) {
-      return sendError(reply, 400, 'INVALID_AMOUNT', 'amount must be a valid number');
-    }
-
-    const rateResult = await cacheGetOrSet(
-      CacheKeys.exchangeRate(from.toUpperCase(), to.toUpperCase()),
-      () => mockGetExchangeRate(from.toUpperCase(), to.toUpperCase()),
-      3600,
-    ).catch(() => mockGetExchangeRate(from.toUpperCase(), to.toUpperCase()));
-
-    return reply.send({
-      success: true,
-      data: {
-        from: from.toUpperCase(),
-        to: to.toUpperCase(),
-        amount: numAmount,
-        converted: numAmount * rateResult.rate,
-        rate: rateResult.rate,
-      },
-    });
   });
 }

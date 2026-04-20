@@ -1,30 +1,47 @@
-import IORedis from 'ioredis';
+import Redis from 'ioredis';
 
-let _client: IORedis | null = null;
+type RedisClient = {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, mode: 'EX', ttlSeconds: number): Promise<unknown>;
+  set(key: string, value: string): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+};
 
-export function getRedis(): IORedis {
-  if (_client) return _client;
+const RedisConstructor = Redis as unknown as new (
+  url: string,
+  options: {
+    maxRetriesPerRequest: number;
+    enableReadyCheck: boolean;
+    lazyConnect: boolean;
+  },
+) => RedisClient;
+
+let client: RedisClient | null = null;
+
+export function getRedis(): RedisClient {
+  if (client) return client;
 
   const url = process.env['REDIS_URL'];
   if (!url) throw new Error('REDIS_URL environment variable is not set');
 
-  _client = new IORedis(url, {
+  client = new RedisConstructor(url, {
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
     lazyConnect: true,
   });
 
-  _client.on('error', (err: Error) => {
-    console.error('[Redis] Connection error:', err.message);
+  client.on('error', (error: Error) => {
+    console.error('[Redis] Connection error:', error.message);
   });
 
-  return _client;
+  return client;
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
-  const client = getRedis();
-  const value = await client.get(key);
+  const value = await getRedis().get(key);
   if (!value) return null;
+
   try {
     return JSON.parse(value) as T;
   } catch {
@@ -32,23 +49,20 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function cacheSet(
-  key: string,
-  value: unknown,
-  ttlSeconds?: number,
-): Promise<void> {
-  const client = getRedis();
+export async function cacheSet(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
+  const redis = getRedis();
   const serialized = JSON.stringify(value);
+
   if (ttlSeconds) {
-    await client.set(key, serialized, 'EX', ttlSeconds);
-  } else {
-    await client.set(key, serialized);
+    await redis.set(key, serialized, 'EX', ttlSeconds);
+    return;
   }
+
+  await redis.set(key, serialized);
 }
 
 export async function cacheDel(key: string): Promise<void> {
-  const client = getRedis();
-  await client.del(key);
+  await getRedis().del(key);
 }
 
 export async function cacheGetOrSet<T>(
@@ -58,12 +72,12 @@ export async function cacheGetOrSet<T>(
 ): Promise<T> {
   const cached = await cacheGet<T>(key);
   if (cached !== null) return cached;
+
   const fresh = await fetcher();
   await cacheSet(key, fresh, ttlSeconds);
   return fresh;
 }
 
-// Cache key helpers
 export const CacheKeys = {
   listing: (id: string) => `listing:${id}`,
   listingSlug: (slug: string) => `listing:slug:${slug}`,
@@ -75,4 +89,4 @@ export const CacheKeys = {
   listingQuality: (id: string) => `quality:${id}`,
 } as const;
 
-export { IORedis };
+export { Redis as IORedis };

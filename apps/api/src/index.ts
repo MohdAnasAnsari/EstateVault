@@ -1,27 +1,27 @@
-import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { authRoutes } from './routes/auth.js';
+import { adminRoutes } from './routes/admin.js';
+import { dealRoomRoutes } from './routes/deal-rooms.js';
+import { kycRoutes } from './routes/kyc.js';
 import { listingRoutes } from './routes/listings.js';
 import { userRoutes } from './routes/users.js';
 import { currencyRoutes } from './routes/currency.js';
 import { startJobs } from './jobs/index.js';
+import { registerDealRoomRealtime } from './lib/deal-room-realtime.js';
 
-const app = Fastify({
-  logger: {
-    level: process.env['NODE_ENV'] === 'production' ? 'info' : 'debug',
-    transport:
-      process.env['NODE_ENV'] !== 'production'
-        ? { target: 'pino-pretty', options: { colorize: true } }
-        : undefined,
-  },
-});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+const app = Fastify({ logger: true });
 
 async function bootstrap() {
-  // Plugins
   await app.register(helmet, { global: true });
 
   await app.register(cors, {
@@ -45,28 +45,34 @@ async function bootstrap() {
     sign: { expiresIn: '7d' },
   });
 
-  // Routes
+  registerDealRoomRealtime(app);
+
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
+  await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
   await app.register(listingRoutes, { prefix: '/api/v1/listings' });
+  await app.register(dealRoomRoutes, { prefix: '/api/v1/deal-rooms' });
   await app.register(userRoutes, { prefix: '/api/v1/users' });
   await app.register(currencyRoutes, { prefix: '/api/v1/currency' });
+  await app.register(adminRoutes, { prefix: '/api/v1/admin' });
 
-  // Health check
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
-  // Start BullMQ jobs
   if (process.env['DISABLE_JOBS'] !== 'true') {
-    await startJobs();
+    try {
+      await startJobs();
+    } catch (error) {
+      app.log.warn({ error }, 'Jobs failed to start');
+    }
   }
 
-  const port = parseInt(process.env['API_PORT'] ?? '4000');
+  const port = Number.parseInt(process.env['API_PORT'] ?? '4000', 10);
   const host = process.env['API_HOST'] ?? '0.0.0.0';
 
   await app.listen({ port, host });
-  console.log(`API server running on http://${host}:${port}`);
+  app.log.info(`API server running on http://${host}:${port}`);
 }
 
-bootstrap().catch((err) => {
-  console.error('Fatal error:', err);
+bootstrap().catch((error) => {
+  console.error('Fatal error:', error);
   process.exit(1);
 });

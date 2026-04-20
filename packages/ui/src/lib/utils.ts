@@ -11,24 +11,23 @@ export function formatPrice(
   locale = 'en-US',
 ): string {
   if (!amount) return 'Price on Request';
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return 'Price on Request';
 
-  if (num >= 1_000_000_000) {
-    return `${currency} ${(num / 1_000_000_000).toFixed(2)}B`;
-  }
-  if (num >= 1_000_000) {
-    return `${currency} ${(num / 1_000_000).toFixed(1)}M`;
-  }
+  const value = typeof amount === 'string' ? Number.parseFloat(amount) : amount;
+  if (Number.isNaN(value)) return 'Price on Request';
+
+  if (value >= 1_000_000_000) return `${currency} ${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `${currency} ${(value / 1_000_000).toFixed(1)}M`;
+
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
-  }).format(num);
+  }).format(value);
 }
 
 export function formatDate(dateString: string | null): string {
-  if (!dateString) return '—';
+  if (!dateString) return '--';
+
   return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
@@ -36,13 +35,13 @@ export function formatDate(dateString: string | null): string {
   }).format(new Date(dateString));
 }
 
-export function formatNumber(n: number): string {
-  return new Intl.NumberFormat('en-US').format(n);
+export function formatNumber(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
 }
 
 export function slugToTitle(slug: string): string {
   return slug
     .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }

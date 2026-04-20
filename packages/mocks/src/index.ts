@@ -1,12 +1,16 @@
 import type {
+  AMLScreening,
   SearchFilters,
   ListingSpecs,
   QualityScore,
   DocumentAnalysis,
+  DealRoomAssistantContext,
+  DealRoomDocumentAnalysis,
   CallSummary,
   PriceRecommendation,
   AssetType,
   Listing,
+  ReraValidationResult,
 } from '@vault/types';
 
 // ─── OTP / SMS ────────────────────────────────────────────────────────────────
@@ -28,13 +32,15 @@ export async function mockVerifyOTP(
 
 export async function mockValidateRERA(
   orn: string,
-): Promise<{ valid: boolean; agentName?: string; brokerage?: string }> {
+): Promise<ReraValidationResult> {
   console.log(`[MOCK] Validating RERA ORN: ${orn}`);
   if (orn.length === 10) {
+    const expiryDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
     return {
       valid: true,
       agentName: 'Ahmed Al-Rashid',
       brokerage: 'Vault Realty LLC',
+      expiryDate,
     };
   }
   return { valid: false };
@@ -44,9 +50,9 @@ export async function mockValidateRERA(
 
 export async function mockKYCSubmit(
   userId: string,
-  documents: { type: string; base64: string }[],
+  documents: unknown,
 ): Promise<{ status: 'submitted'; referenceId: string }> {
-  console.log(`[MOCK] KYC submission for user ${userId}, docs: ${documents.length}`);
+  console.log(`[MOCK] KYC submission for user ${userId}`, documents);
   return {
     status: 'submitted',
     referenceId: `KYC-MOCK-${Date.now()}`,
@@ -58,6 +64,30 @@ export async function mockKYCStatus(
 ): Promise<{ status: 'pending' | 'approved' | 'rejected'; reason?: string }> {
   console.log(`[MOCK] KYC status check for ${referenceId}`);
   return { status: 'approved' };
+}
+
+export async function mockAMLScreening(
+  realName: string,
+  nationality: string,
+): Promise<Omit<AMLScreening, 'id' | 'userId' | 'screenedAt'>> {
+  console.log(`[MOCK] AML screening for ${realName} (${nationality})`);
+  return {
+    riskScore: 24,
+    pepMatch: false,
+    sanctionsMatch: false,
+    requiresReview: false,
+    reviewerNotes: 'Auto-cleared by mock AML service.',
+  };
+}
+
+export async function mockVerifyTitleDeed(
+  deedNumber: string,
+): Promise<{ verified: boolean; badge: string }> {
+  console.log(`[MOCK] Title deed verification for ${deedNumber}`);
+  return {
+    verified: deedNumber.trim().length >= 6,
+    badge: 'Title deed verified',
+  };
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -129,6 +159,22 @@ export async function mockChatComplete(
   return 'This is a mock AI response for: ' + user.slice(0, 50);
 }
 
+export async function mockDealRoomAssistant(
+  context: DealRoomAssistantContext,
+): Promise<string> {
+  console.log(`[MOCK] Deal room assistant for stage ${context.stage}`);
+
+  if (context.stage === 'pending_nda') {
+    return 'Sign the NDA to proceed. It protects both parties and unlocks full asset details.';
+  }
+
+  if (context.stage === 'due_diligence') {
+    return 'You have 3 documents pending review. Ensure you review the title deed before making an offer.';
+  }
+
+  return 'Consider requesting the Asset Health Report to review occupancy and NOI before your next meeting.';
+}
+
 export async function mockExtractSearchFilters(query: string): Promise<SearchFilters> {
   console.log(`[MOCK] Extracting search filters from: "${query}"`);
   const lower = query.toLowerCase();
@@ -180,38 +226,52 @@ export async function mockScoreListingQuality(
   imageUrls: string[],
 ): Promise<QualityScore> {
   console.log(`[MOCK] Scoring listing quality`);
-  const hasDescription = (listing.description?.length ?? 0) > 100;
-  const hasCoords = listing.coordinatesLat != null;
-  const photoQuality = Math.min(100, imageUrls.length * 20);
-  const completeness =
-    [
-      listing.title,
-      listing.description,
-      listing.sizeSqm,
-      listing.country,
-      listing.city,
-      listing.priceAmount,
-    ].filter(Boolean).length * 16;
-  const descriptionQuality = hasDescription ? 80 : 30;
-  const verificationBonus = listing.titleDeedVerified ? 20 : 0;
+  const hasFivePhotos = imageUrls.length >= 5;
+  const hasVideo = imageUrls.some((url) => /\.(mp4|mov|webm)$/i.test(url)) || false;
+  const hasFloorPlan = imageUrls.some((url) => /floor/i.test(url)) || false;
+  const hasVirtualTour = imageUrls.some((url) => /tour|360/i.test(url)) || false;
+  const descriptionWords = (listing.description ?? '').trim().split(/\s+/).filter(Boolean).length;
+  const allSpecsFilled = Boolean(
+    listing.title &&
+      listing.assetType &&
+      listing.country &&
+      listing.city &&
+      listing.priceAmount &&
+      listing.sizeSqm &&
+      listing.bedrooms !== null &&
+      listing.bathrooms !== null,
+  );
 
-  const score = Math.round(
-    (photoQuality * 0.3 + completeness * 0.3 + descriptionQuality * 0.2 + verificationBonus * 0.2),
+  const score = Math.min(
+    100,
+    (hasFivePhotos ? 20 : 0) +
+      (hasVideo ? 15 : 0) +
+      (hasFloorPlan ? 10 : 0) +
+      (hasVirtualTour ? 10 : 0) +
+      (descriptionWords > 200 ? 10 : 0) +
+      (allSpecsFilled ? 15 : 0) +
+      (listing.titleDeedVerified ? 20 : 0),
   );
 
   const tier: QualityScore['tier'] =
-    score >= 85 ? 'platinum' : score >= 70 ? 'gold' : score >= 50 ? 'silver' : 'bronze';
+    score >= 86 ? 'platinum' : score >= 66 ? 'gold' : score >= 41 ? 'silver' : 'bronze';
 
   const suggestions: string[] = [];
-  if (!hasDescription) suggestions.push('Add a detailed description (100+ characters)');
-  if (!hasCoords) suggestions.push('Add precise coordinates for map display');
-  if (imageUrls.length < 5) suggestions.push('Upload at least 5 high-quality photos');
-  if (!listing.titleDeedVerified) suggestions.push('Verify your title deed to boost visibility');
+  if (!hasFloorPlan) suggestions.push('Add a floor plan (+10 points)');
+  if (!hasVideo) suggestions.push('Upload a video tour (+15 points)');
+  if (!listing.descriptionAr) suggestions.push('Add Arabic description (+10 points)');
+  if (!listing.titleDeedVerified) suggestions.push('Verify the title deed (+20 points)');
+  if (!hasFivePhotos) suggestions.push('Upload at least 5 photos (+20 points)');
 
   return {
     score,
     tier,
-    breakdown: { photoQuality, completeness, descriptionQuality, verificationBonus },
+    breakdown: {
+      photoQuality: hasFivePhotos ? 20 : Math.min(20, imageUrls.length * 4),
+      completeness: allSpecsFilled ? 15 : 5,
+      descriptionQuality: descriptionWords > 200 ? 10 : Math.min(10, Math.floor(descriptionWords / 20)),
+      verificationBonus: listing.titleDeedVerified ? 20 : 0,
+    },
     suggestions,
   };
 }
@@ -233,6 +293,25 @@ export async function mockAnalyseDocument(
     },
     confidenceScore: 0.94,
     issues: [],
+  };
+}
+
+export async function mockAnalyseDealRoomDocument(
+  base64Content: string,
+  docType: string,
+): Promise<DealRoomDocumentAnalysis> {
+  console.log(`[MOCK] Analysing deal room document of type: ${docType}`);
+  void base64Content;
+
+  return {
+    summary: 'Title deed for Plot 123, registered 2019, no encumbrances, owner: [REDACTED]',
+    fields: [
+      { name: 'Document Type', value: docType },
+      { name: 'Registration Date', value: '2019-03-15' },
+      { name: 'Owner', value: '[REDACTED]' },
+      { name: 'Encumbrances', value: 'None detected' },
+    ],
+    flags: [],
   };
 }
 

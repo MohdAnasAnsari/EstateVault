@@ -1,58 +1,74 @@
-import type {
-  SearchFilters,
-  ListingSpecs,
-  QualityScore,
-  DocumentAnalysis,
-  CallSummary,
-  PriceRecommendation,
-  Listing,
+import OpenAI from 'openai';
+import {
+  CallSummarySchema,
+  type CallSummary,
+  DealRoomAssistantSuggestionSchema,
+  type DealRoomAssistantContext,
+  DealRoomDocumentAnalysisSchema,
+  type DealRoomDocumentAnalysis,
+  DocumentAnalysisSchema,
+  type DocumentAnalysis,
+  type Listing,
+  type ListingSpecs,
+  PriceRecommendationSchema,
+  type PriceRecommendation,
+  QualityScoreSchema,
+  type QualityScore,
+  SearchFiltersSchema,
+  type SearchFilters,
 } from '@vault/types';
 import {
-  mockGetEmbedding,
+  mockAnalyseDealRoomDocument,
+  mockAnalyseDocument,
   mockChatComplete,
+  mockDealRoomAssistant,
   mockExtractSearchFilters,
   mockGenerateListingDescription,
-  mockScoreListingQuality,
-  mockAnalyseDocument,
-  mockSummariseCall,
+  mockGetEmbedding,
   mockGetPriceRecommendation,
+  mockScoreListingQuality,
+  mockSummariseCall,
 } from '@vault/mocks';
 
 const IS_MOCK = process.env['MOCK_SERVICES'] !== 'false';
 
 export class AIService {
-  private openai: import('openai').default | null = null;
+  private openai: OpenAI | null = null;
 
-  private getOpenAI() {
+  private getOpenAI(): OpenAI {
     if (this.openai) return this.openai;
-    const OpenAI = require('openai');
-    this.openai = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
-    return this.openai!;
+
+    const apiKey = process.env['OPENAI_API_KEY'];
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is required when MOCK_SERVICES=false');
+    }
+
+    this.openai = new OpenAI({ apiKey });
+    return this.openai;
   }
 
   async getEmbedding(text: string): Promise<number[]> {
     if (IS_MOCK) return mockGetEmbedding(text);
 
-    const openai = this.getOpenAI();
-    const response = await openai.embeddings.create({
+    const response = await this.getOpenAI().embeddings.create({
       model: 'text-embedding-3-small',
       input: text,
       dimensions: 1536,
     });
+
     return response.data[0]?.embedding ?? [];
   }
 
-  async chatComplete(system: string, user: string, json?: boolean): Promise<string> {
+  async chatComplete(system: string, user: string, json = false): Promise<string> {
     if (IS_MOCK) return mockChatComplete(system, user, json);
 
-    const openai = this.getOpenAI();
-    const response = await openai.chat.completions.create({
+    const response = await this.getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      ...(json ? { response_format: { type: 'json_object' } } : {}),
+      ...(json ? { response_format: { type: 'json_object' as const } } : {}),
     });
 
     return response.choices[0]?.message?.content ?? '';
@@ -61,24 +77,20 @@ export class AIService {
   async extractSearchFilters(query: string): Promise<SearchFilters> {
     if (IS_MOCK) return mockExtractSearchFilters(query);
 
-    const systemPrompt = `You are a luxury real estate search assistant. Extract structured search filters from a natural language query.
-Return a JSON object with these optional fields:
-- assetType: one of hotel|palace|heritage_estate|development_plot|penthouse_tower|private_island|branded_residence|villa|commercial_building|golf_resort|other
-- country: string
-- city: string
-- priceMin: number (in AED)
-- priceMax: number (in AED)
-- bedroomsMin: integer
-- sizeSqmMin: number
-- titleDeedVerified: boolean
-- sellerMotivation: one of motivated|testing_market|best_offers|fast_close|price_flexible
-- explanation: string (human-readable explanation of what you're searching for)`;
+    const result = await this.chatComplete(
+      [
+        'You extract structured search filters for a trophy real estate marketplace.',
+        'Return JSON only.',
+        'Allowed fields: assetType, country, city, priceMin, priceMax, bedroomsMin, sizeSqmMin, titleDeedVerified, sellerMotivation, explanation.',
+      ].join(' '),
+      query,
+      true,
+    );
 
-    const result = await this.chatComplete(systemPrompt, query, true);
     try {
-      return JSON.parse(result) as SearchFilters;
+      return SearchFiltersSchema.parse(JSON.parse(result));
     } catch {
-      return { explanation: 'Showing all results' };
+      return { explanation: 'Showing all active results' };
     }
   }
 
@@ -88,21 +100,24 @@ Return a JSON object with these optional fields:
   ): Promise<string> {
     if (IS_MOCK) return mockGenerateListingDescription(specs, lang);
 
-    const systemPrompt = lang === 'ar'
-      ? 'أنت كاتب محترف متخصص في العقارات الفاخرة. اكتب وصفاً احترافياً ومقنعاً للعقار باللغة العربية.'
-      : 'You are a professional luxury real estate copywriter. Write a compelling, sophisticated property description that appeals to ultra-high-net-worth buyers. Focus on exclusivity, investment potential, and lifestyle.';
+    const system =
+      lang === 'ar'
+        ? 'أنت كاتب محترف للعقارات الفاخرة. اكتب وصفاً عربياً راقياً ومقنعاً ومختصراً.'
+        : 'You are a luxury real estate copywriter. Write a polished, discreet, premium listing description.';
 
-    const userPrompt = `Write a listing description for: ${JSON.stringify(specs)}`;
-    return this.chatComplete(systemPrompt, userPrompt);
+    return this.chatComplete(system, JSON.stringify(specs));
   }
 
   async scoreListingQuality(listing: Listing, imageUrls: string[]): Promise<QualityScore> {
     if (IS_MOCK) return mockScoreListingQuality(listing, imageUrls);
 
-    const systemPrompt = `You are a luxury real estate quality assessor. Score a listing 0-100 based on completeness, description quality, photo quality hints, and verification status. Return JSON with: score (int), tier (bronze/silver/gold/platinum), breakdown (photoQuality, completeness, descriptionQuality, verificationBonus), suggestions (string[]).`;
-    const userPrompt = JSON.stringify({ listing, imageCount: imageUrls.length });
-    const result = await this.chatComplete(systemPrompt, userPrompt, true);
-    return JSON.parse(result) as QualityScore;
+    const result = await this.chatComplete(
+      'Assess listing quality and return JSON with score, tier, breakdown, and suggestions.',
+      JSON.stringify({ listing, imageUrls }),
+      true,
+    );
+
+    return QualityScoreSchema.parse(JSON.parse(result));
   }
 
   async analyseDocument(
@@ -111,16 +126,16 @@ Return a JSON object with these optional fields:
   ): Promise<DocumentAnalysis> {
     if (IS_MOCK) return mockAnalyseDocument(base64Content, docType);
 
-    const openai = this.getOpenAI();
-    const response = await openai.chat.completions.create({
+    const response = await this.getOpenAI().chat.completions.create({
       model: 'gpt-4o',
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `Analyse this ${docType} document and return a JSON with: documentType, isValid (bool), extractedData (object), confidenceScore (0-1), issues (string[]).`,
+              text: `Analyse this ${docType} document and return JSON with documentType, isValid, extractedData, confidenceScore, issues.`,
             },
             {
               type: 'image_url',
@@ -129,27 +144,92 @@ Return a JSON object with these optional fields:
           ],
         },
       ],
-      response_format: { type: 'json_object' },
     });
 
-    const content = response.choices[0]?.message?.content ?? '{}';
-    return JSON.parse(content) as DocumentAnalysis;
+    return DocumentAnalysisSchema.parse(
+      JSON.parse(response.choices[0]?.message?.content ?? '{}'),
+    );
+  }
+
+  async getDealRoomAssistantSuggestion(
+    context: DealRoomAssistantContext,
+  ): Promise<{ message: string }> {
+    if (IS_MOCK) {
+      return DealRoomAssistantSuggestionSchema.parse({
+        message: await mockDealRoomAssistant(context),
+      });
+    }
+
+    const message = await this.chatComplete(
+      [
+        'You are the VAULT deal room assistant.',
+        'Never refer to actual message contents or speculate about private chat text.',
+        'Use only the provided stage, uploaded document names, active day count, and last message date.',
+        'Reply with one concise recommendation sentence.',
+      ].join(' '),
+      JSON.stringify(context),
+    );
+
+    return DealRoomAssistantSuggestionSchema.parse({ message });
+  }
+
+  async analyseDealRoomDocument(
+    base64Content: string,
+    docType: string,
+  ): Promise<DealRoomDocumentAnalysis> {
+    if (IS_MOCK) return mockAnalyseDealRoomDocument(base64Content, docType);
+
+    const response = await this.getOpenAI().chat.completions.create({
+      model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: [
+                `Analyse this ${docType} document for a private deal room.`,
+                'Return JSON with summary, fields [{name, value}], and flags.',
+                'Do not include raw chat content or personal details beyond what is visible in the document.',
+              ].join(' '),
+            },
+            {
+              type: 'image_url',
+              image_url: { url: `data:image/jpeg;base64,${base64Content}` },
+            },
+          ],
+        },
+      ],
+    });
+
+    return DealRoomDocumentAnalysisSchema.parse(
+      JSON.parse(response.choices[0]?.message?.content ?? '{}'),
+    );
   }
 
   async summariseCall(transcriptText: string): Promise<CallSummary> {
     if (IS_MOCK) return mockSummariseCall(transcriptText);
 
-    const systemPrompt = `Summarise this real estate call transcript. Return JSON with: summary (string), keyPoints (string[]), sentiment (positive/neutral/negative), actionItems (string[]).`;
-    const result = await this.chatComplete(systemPrompt, transcriptText, true);
-    return JSON.parse(result) as CallSummary;
+    const result = await this.chatComplete(
+      'Summarise this luxury real estate call and return JSON with summary, keyPoints, sentiment, actionItems.',
+      transcriptText,
+      true,
+    );
+
+    return CallSummarySchema.parse(JSON.parse(result));
   }
 
   async getPriceRecommendation(listing: Partial<Listing>): Promise<PriceRecommendation> {
     if (IS_MOCK) return mockGetPriceRecommendation(listing);
 
-    const systemPrompt = `You are a luxury real estate valuation expert. Provide a price recommendation with comparables. Return JSON with: recommendedPrice (number), priceRange ({min, max}), currency (3-char), confidence (0-1), rationale (string), comparables (array of {description, price, adjustmentFactor}).`;
-    const result = await this.chatComplete(systemPrompt, JSON.stringify(listing), true);
-    return JSON.parse(result) as PriceRecommendation;
+    const result = await this.chatComplete(
+      'Estimate a trophy real estate price recommendation and return JSON with recommendedPrice, priceRange, currency, confidence, rationale, comparables.',
+      JSON.stringify(listing),
+      true,
+    );
+
+    return PriceRecommendationSchema.parse(JSON.parse(result));
   }
 }
 
