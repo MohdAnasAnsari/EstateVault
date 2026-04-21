@@ -50,6 +50,34 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Phase 7: PgBouncer connection pooler
+  pgbouncer:
+    image: bitnami/pgbouncer:latest
+    container_name: vault_pgbouncer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRESQL_HOST: vault_postgres
+      POSTGRESQL_PORT: '5432'
+      POSTGRESQL_DATABASE: vault_dev
+      POSTGRESQL_USERNAME: vault
+      POSTGRESQL_PASSWORD: vault
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: '500'
+      PGBOUNCER_DEFAULT_POOL_SIZE: '25'
+      PGBOUNCER_MIN_POOL_SIZE: '5'
+      PGBOUNCER_AUTH_TYPE: scram-sha-256
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - '6432:6432'
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-h', 'localhost', '-p', '6432', '-U', 'vault']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import type { ListingWithMedia } from '@vault/types';
 import { Badge, Button, Card, LivenessDot, formatPrice } from '@vault/ui';
 import { useAuth } from './providers/auth-provider';
@@ -18,10 +19,13 @@ export function ListingCard({ listing }: ListingCardProps) {
   return (
     <Card className="group overflow-hidden rounded-[1.75rem] border-white/8 bg-black/35 transition hover:-translate-y-1 hover:border-amber-300/25">
       <div className="relative aspect-[4/3] overflow-hidden">
-        <img
+        <Image
           src={listing.media[0]?.url ?? `https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80`}
           alt={listing.title}
-          className={`h-full w-full object-cover transition duration-500 group-hover:scale-105 ${offMarketLocked ? 'blur-md' : ''}`}
+          fill
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          className={`object-cover transition duration-500 group-hover:scale-105 ${offMarketLocked ? 'blur-md' : ''}`}
+          priority={false}
         />
         <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4">
           <Badge className="border border-white/10 bg-black/55 text-stone-100">

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 import type { Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'ioredis';
 import {
   SocketCallAnswerSchema,
   SocketCallEndSchema,
@@ -204,7 +206,7 @@ export async function emitDealRoomPresence(dealRoomId: string): Promise<void> {
   await emitPresenceUpdate(dealRoomId);
 }
 
-export function registerDealRoomRealtime(app: FastifyInstance): void {
+export async function registerDealRoomRealtime(app: FastifyInstance): Promise<void> {
   if (io) return;
 
   io = new Server(app.server, {
@@ -215,7 +217,24 @@ export function registerDealRoomRealtime(app: FastifyInstance): void {
       ],
       credentials: true,
     },
+    // Efficient binary transport
+    transports: ['websocket', 'polling'],
   });
+
+  // Redis adapter for horizontal scaling
+  if (process.env['REDIS_URL']) {
+    try {
+      const pubClient = new createClient({ lazyConnect: true } as never);
+      const subClient = pubClient.duplicate() as unknown as ReturnType<typeof createClient>;
+      const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+      await (pubClient as unknown as { connect: (url: string) => Promise<void> }).connect(redisUrl);
+      await (subClient as unknown as { connect: (url: string) => Promise<void> }).connect(redisUrl);
+      io.adapter(createAdapter(pubClient as never, subClient as never));
+      app.log.info('Socket.IO Redis adapter attached');
+    } catch (err) {
+      app.log.warn({ err }, 'Socket.IO Redis adapter failed, using in-memory fallback');
+    }
+  }
 
   io.use(async (socket, next) => {
     try {

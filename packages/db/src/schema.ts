@@ -152,12 +152,21 @@ export const users = pgTable(
     stripeSubscriptionId: varchar('stripe_subscription_id'),
     expoPushToken: varchar('expo_push_token'),
     lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+    // Phase 7: 2FA fields
+    totpSecret: text('totp_secret'),
+    totpSecretPending: text('totp_secret_pending'),
+    totpEnabled: boolean('totp_enabled').default(false).notNull(),
+    totpBackupCodes: text('totp_backup_codes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({
     emailIdx: index('users_email_idx').on(t.email),
     roleIdx: index('users_role_idx').on(t.role),
+    // Composite: dashboard user list filtered by role + kyc status
+    roleKycIdx: index('users_role_kyc_idx').on(t.role, t.kycStatus),
+    // Composite: access tier + last active (for DAU queries)
+    tierActiveIdx: index('users_tier_active_idx').on(t.accessTier, t.lastActiveAt),
   }),
 );
 
@@ -231,6 +240,15 @@ export const listings = pgTable(
     cityIdx: index('listings_city_idx').on(t.city),
     sellerIdx: index('listings_seller_idx').on(t.sellerId),
     priceIdx: index('listings_price_idx').on(t.priceAmount),
+    // Phase 7 composite indexes for high-traffic browse queries
+    // status + visibility + city: primary browse filter combination
+    statusVisibilityCityIdx: index('listings_status_visibility_city_idx').on(t.status, t.visibility, t.city),
+    // status + assetType + priceAmount: filter by type and price range
+    statusTypepriceIdx: index('listings_status_type_price_idx').on(t.status, t.assetType, t.priceAmount),
+    // status + qualityTier + createdAt: sorted quality listings feed
+    statusQualityCreatedIdx: index('listings_status_quality_created_idx').on(t.status, t.qualityTier, t.createdAt),
+    // aiFraudFlag + verificationStatus: admin fraud review queue
+    fraudVerifIdx: index('listings_fraud_verif_idx').on(t.aiFraudFlag, t.verificationStatus),
   }),
 );
 
@@ -396,6 +414,10 @@ export const dealRooms = pgTable(
     statusIdx: index('deal_rooms_status_idx').on(t.status),
     buyerIdx: index('deal_rooms_buyer_idx').on(t.buyerId),
     sellerIdx: index('deal_rooms_seller_idx').on(t.sellerId),
+    // Phase 7: buyer dashboard loads deal rooms by buyerId + status
+    buyerStatusIdx: index('deal_rooms_buyer_status_idx').on(t.buyerId, t.status),
+    // Phase 7: seller dashboard loads deal rooms by sellerId + lastMessageAt
+    sellerLastMsgIdx: index('deal_rooms_seller_lastmsg_idx').on(t.sellerId, t.lastMessageAt),
   }),
 );
 
@@ -452,6 +474,8 @@ export const messages = pgTable(
     roomIdx: index('messages_room_idx').on(t.dealRoomId),
     senderIdx: index('messages_sender_idx').on(t.senderId),
     createdIdx: index('messages_created_idx').on(t.createdAt),
+    // Phase 7: paginated message history — roomId + createdAt DESC
+    roomCreatedIdx: index('messages_room_created_idx').on(t.dealRoomId, t.createdAt),
   }),
 );
 

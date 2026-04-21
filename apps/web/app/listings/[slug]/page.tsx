@@ -1,10 +1,21 @@
 import { notFound } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
+import { Suspense } from 'react';
 import { Badge, formatDate, formatPrice } from '@vault/ui';
 import { InterestModal } from '@/components/interest-modal';
-import { ComparableSales } from '@/components/comparable-sales';
-import { InvestmentCalculator } from '@/components/investment-calculator';
 import { TranslationButton } from '@/components/translation-button';
 import { getListingBySlug } from '@/lib/server-api';
+
+// Lazy-load heavy chart + calculator components
+const ComparableSales = dynamic(
+  () => import('@/components/comparable-sales').then((m) => ({ default: m.ComparableSales })),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-stone-800 rounded-lg" /> },
+);
+const InvestmentCalculator = dynamic(
+  () => import('@/components/investment-calculator').then((m) => ({ default: m.InvestmentCalculator })),
+  { ssr: false, loading: () => <div className="h-96 animate-pulse bg-stone-800 rounded-lg" /> },
+);
 
 function calculateCapRate(noi: number | null | undefined, price: string | null): string {
   if (!noi || !price) return 'N/A';
@@ -27,22 +38,30 @@ export default async function ListingDetailPage({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_380px]">
         <section className="space-y-6">
           <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
-            <img
-              src={listing.media[0]?.url ?? `https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80`}
-              alt={listing.title}
-              className="h-full min-h-[420px] w-full rounded-[2rem] object-cover"
-            />
+            <div className="relative min-h-[420px] w-full overflow-hidden rounded-[2rem]">
+              <Image
+                src={listing.media[0]?.url ?? `https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80`}
+                alt={listing.title}
+                fill
+                sizes="(max-width: 768px) 100vw, 66vw"
+                className="object-cover"
+                priority
+              />
+            </div>
             <div className="grid gap-4">
               {Array.from({ length: 3 }, (_, index) => (
-                <img
-                  key={index}
+                <div key={index} className="relative min-h-[130px] w-full overflow-hidden rounded-[1.5rem]">
+                <Image
                   src={
                     listing.media[index + 1]?.url ??
                     `https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80`
                   }
                   alt={`${listing.title} gallery ${index + 2}`}
-                  className="h-full min-h-[130px] w-full rounded-[1.5rem] object-cover"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 33vw"
+                  className="object-cover"
                 />
+                </div>
               ))}
             </div>
           </div>
@@ -111,19 +130,23 @@ export default async function ListingDetailPage({
             </div>
 
             <div>
-              <InvestmentCalculator
-                initialPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
-                listingId={listing.id}
-              />
+              <Suspense fallback={<div className="h-96 animate-pulse bg-stone-800 rounded-lg" />}>
+                <InvestmentCalculator
+                  initialPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
+                  listingId={listing.id}
+                />
+              </Suspense>
             </div>
           </section>
 
           {/* Phase 5: AI Comparable Sales */}
-          <ComparableSales
-            listingId={listing.id}
-            listingPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
-            currency={listing.priceCurrency}
-          />
+          <Suspense fallback={<div className="h-64 animate-pulse bg-stone-800 rounded-lg" />}>
+            <ComparableSales
+              listingId={listing.id}
+              listingPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
+              currency={listing.priceCurrency}
+            />
+          </Suspense>
         </section>
 
         <aside className="space-y-6">
