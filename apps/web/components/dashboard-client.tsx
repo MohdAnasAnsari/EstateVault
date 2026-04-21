@@ -7,6 +7,8 @@ import type { DealRoomSummary, ListingWithMedia, SavedListingWithListing } from 
 import { Badge, Button, LivenessDot } from '@vault/ui';
 import { dashboardHighlights } from '@/lib/constants';
 import { useAuth } from './providers/auth-provider';
+import { MatchedListings } from './matched-listings';
+import { InvestmentCalculator } from './investment-calculator';
 
 export function DashboardClient() {
   const { token, user, loading } = useAuth();
@@ -76,6 +78,11 @@ export function DashboardClient() {
           );
         })}
       </section>
+
+      {/* Phase 5: AI Matched listings for buyers */}
+      {user.role === 'buyer' && token && (
+        <MatchedListings token={token} />
+      )}
 
       {user.role === 'buyer' ? (
         <section className="grid gap-6 lg:grid-cols-2">

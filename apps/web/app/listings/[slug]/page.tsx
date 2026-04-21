@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { Badge, formatDate, formatPrice } from '@vault/ui';
 import { InterestModal } from '@/components/interest-modal';
-import { comparableSalesByAssetType } from '@/lib/constants';
+import { ComparableSales } from '@/components/comparable-sales';
+import { InvestmentCalculator } from '@/components/investment-calculator';
+import { TranslationButton } from '@/components/translation-button';
 import { getListingBySlug } from '@/lib/server-api';
 
 function calculateCapRate(noi: number | null | undefined, price: string | null): string {
@@ -19,8 +21,6 @@ export default async function ListingDetailPage({
   const listing = await getListingBySlug(slug);
 
   if (!listing) notFound();
-
-  const comparables = comparableSalesByAssetType[listing.assetType];
 
   return (
     <main className="page-wrap section-space">
@@ -58,9 +58,13 @@ export default async function ListingDetailPage({
             <p className="mt-3 text-lg text-stone-300">
               {listing.city}, {listing.country}
             </p>
-            <p className="mt-6 max-w-4xl text-sm leading-8 text-stone-300">
-              {listing.description ?? 'Private asset overview available on request.'}
-            </p>
+            <div className="mt-6 max-w-4xl">
+              <TranslationButton
+                text={listing.description ?? 'Private asset overview available on request.'}
+                targetLanguage="ar"
+                label="Translate to Arabic"
+              />
+            </div>
           </div>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -106,31 +110,20 @@ export default async function ListingDetailPage({
               </div>
             </div>
 
-            <div className="cinematic-panel rounded-[2rem] p-7">
-              <h2 className="text-2xl text-stone-50">Investment calculator</h2>
-              <div className="mt-5 grid gap-4">
-                <MetricCard label="Ask" value={formatPrice(listing.priceAmount, listing.priceCurrency)} />
-                <MetricCard label="NOI" value={listing.commercialData?.noi ? formatPrice(listing.commercialData.noi, listing.priceCurrency) : 'N/A'} />
-                <MetricCard label="Basic cap rate" value={calculateCapRate(listing.commercialData?.noi, listing.priceAmount)} />
-              </div>
+            <div>
+              <InvestmentCalculator
+                initialPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
+                listingId={listing.id}
+              />
             </div>
           </section>
 
-          <section className="cinematic-panel rounded-[2rem] p-7">
-            <h2 className="text-2xl text-stone-50">Comparable sales</h2>
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {comparables.map((item) => (
-                <div key={item.id} className="rounded-[1.4rem] border border-white/8 bg-white/3 p-5">
-                  <p className="text-lg text-stone-100">{item.title}</p>
-                  <p className="mt-2 text-sm text-stone-400">{item.location}</p>
-                  <p className="mt-4 text-amber-100">{formatPrice(item.soldPrice, item.currency)}</p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.25em] text-stone-500">
-                    Sold {item.soldAt}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
+          {/* Phase 5: AI Comparable Sales */}
+          <ComparableSales
+            listingId={listing.id}
+            listingPrice={listing.priceAmount ? Number(listing.priceAmount) : undefined}
+            currency={listing.priceCurrency}
+          />
         </section>
 
         <aside className="space-y-6">

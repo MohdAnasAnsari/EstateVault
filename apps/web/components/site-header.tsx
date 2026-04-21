@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { ShieldCheck } from 'lucide-react';
 import { Button } from '@vault/ui';
 import { useAuth } from './providers/auth-provider';
+import { NotificationBell } from './notification-bell';
 
 export function SiteHeader() {
-  const { user, logout } = useAuth();
+  const { token, user, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-black/35 backdrop-blur-xl">
@@ -21,6 +22,11 @@ export function SiteHeader() {
         <nav className="hidden items-center gap-6 text-sm text-stone-300 md:flex">
           <Link href="/listings">Listings</Link>
           <Link href="/dashboard">Dashboard</Link>
+          {user && <Link href="/portfolio">Portfolio</Link>}
+          {user && <Link href="/off-market">Off-Market</Link>}
+          {user?.accessTier === 'level_3' && (
+            <Link href="/market-intelligence" className="text-amber-400 hover:text-amber-300">Intelligence</Link>
+          )}
           <Link href="/kyc">KYC</Link>
           {user?.role === 'admin' ? <Link href="/admin">Admin</Link> : null}
           <Link href="/profile">Profile</Link>
@@ -29,6 +35,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
+              <NotificationBell token={token} />
               <span className="hidden text-sm text-stone-300 sm:block">
                 {user.displayName ?? user.email}
               </span>

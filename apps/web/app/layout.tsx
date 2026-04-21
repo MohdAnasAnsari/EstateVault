@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/providers/auth-provider';
+import { LanguageProvider } from '@/components/providers/language-provider';
 import { SiteHeader } from '@/components/site-header';
+import { AIConcierge } from '@/components/ai-concierge';
 
 export const metadata: Metadata = {
   title: 'VAULT',
@@ -13,10 +15,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body>
         <AuthProvider>
-          <div className="app-shell">
-            <SiteHeader />
-            {children}
-          </div>
+          <LanguageProvider>
+            <div className="app-shell">
+              <SiteHeader />
+              {children}
+              <AIConcierge />
+            </div>
+          </LanguageProvider>
         </AuthProvider>
       </body>
     </html>

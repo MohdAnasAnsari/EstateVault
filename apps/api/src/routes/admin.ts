@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, count, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { getDb } from '@vault/db';
-import { adminAlerts, amlScreenings, kycSubmissions, listings, users } from '@vault/db/schema';
+import { adminAlerts, amlScreenings, dealRooms, kycSubmissions, listings, users } from '@vault/db/schema';
 import {
   AdminUserUpdateInputSchema,
   KycReviewActionInputSchema,
@@ -19,6 +19,7 @@ import {
   serializeListing,
   serializeUser,
 } from '../lib/serializers.js';
+import { getDealHealthScore } from '../lib/deal-health.js';
 
 function getIp(request: Parameters<FastifyInstance['get']>[1] extends never ? never : any): string | null {
   return request.ip ?? request.headers['x-forwarded-for']?.toString() ?? null;
@@ -271,5 +272,47 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ success: true, data: { token, user: serializeUser(user) } });
+  });
+
+  // Phase 5: Deal Health Score
+  app.get('/deal-rooms/:id/health', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const health = await getDealHealthScore(id);
+      return reply.send({ success: true, data: health });
+    } catch (error) {
+      app.log.error(error);
+      return sendError(reply, 500, 'INTERNAL_ERROR', 'Failed to compute deal health score');
+    }
+  });
+
+  // Phase 5: Batch deal health for admin deal monitor
+  app.get('/deal-rooms/health', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const db = getDb();
+      const activeRooms = await db
+        .select({ id: dealRooms.id })
+        .from(dealRooms)
+        .where(sql`${dealRooms.status} NOT IN ('closed')`)
+        .limit(50);
+
+      const scores = await Promise.all(
+        activeRooms.map(async (room) => {
+          try {
+            return await getDealHealthScore(room.id);
+          } catch {
+            return null;
+          }
+        }),
+      );
+
+      return reply.send({
+        success: true,
+        data: scores.filter(Boolean).sort((a, b) => (a?.score ?? 100) - (b?.score ?? 100)),
+      });
+    } catch (error) {
+      app.log.error(error);
+      return sendError(reply, 500, 'INTERNAL_ERROR', 'Failed to fetch deal health scores');
+    }
   });
 }

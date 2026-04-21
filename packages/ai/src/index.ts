@@ -10,12 +10,19 @@ import {
   type DocumentAnalysis,
   type Listing,
   type ListingSpecs,
+  type AssetType,
   PriceRecommendationSchema,
   type PriceRecommendation,
   QualityScoreSchema,
   type QualityScore,
   SearchFiltersSchema,
   type SearchFilters,
+  type MarketIntelligence,
+  type ComparableSalesResponse,
+  type ConciergeResponse,
+  type GenerateListingDescriptionDual,
+  type DealHealthScore,
+  type TranslationResult,
 } from '@vault/types';
 import {
   mockAnalyseDealRoomDocument,
@@ -28,6 +35,14 @@ import {
   mockGetPriceRecommendation,
   mockScoreListingQuality,
   mockSummariseCall,
+  mockGenerateMatchExplanation,
+  mockGetMarketIntelligence,
+  mockConciergeLookup,
+  mockGetComparableSales,
+  mockGenerateListingDescriptionDual,
+  mockCalculateDealHealth,
+  mockGetPortfolioInsight,
+  mockTranslate,
 } from '@vault/mocks';
 
 const IS_MOCK = process.env['MOCK_SERVICES'] !== 'false';
@@ -230,6 +245,122 @@ export class AIService {
     );
 
     return PriceRecommendationSchema.parse(JSON.parse(result));
+  }
+
+  async generateMatchExplanation(
+    buyerPrefs: Record<string, unknown>,
+    listing: Partial<Listing>,
+  ): Promise<string> {
+    if (IS_MOCK) return mockGenerateMatchExplanation(buyerPrefs, listing);
+
+    return this.chatComplete(
+      'You explain in one sentence why a listing matches a buyer\'s preferences on a luxury real estate platform.',
+      JSON.stringify({ buyerPrefs, listing }),
+    );
+  }
+
+  async getMarketIntelligence(city: string): Promise<MarketIntelligence> {
+    if (IS_MOCK) return mockGetMarketIntelligence(city);
+
+    const result = await this.chatComplete(
+      'Generate market intelligence data for a luxury real estate market. Return JSON.',
+      JSON.stringify({ city }),
+      true,
+    );
+
+    return JSON.parse(result) as MarketIntelligence;
+  }
+
+  async conciergeLookup(message: string): Promise<ConciergeResponse> {
+    if (IS_MOCK) return mockConciergeLookup(message);
+
+    const answer = await this.chatComplete(
+      [
+        'You are the VAULT platform concierge for a luxury real estate marketplace.',
+        'Answer questions about: listing verification, KYC, RERA, deal rooms, NDAs, fees.',
+        'If user asks for human support, set isHumanHandoff: true.',
+        'Return JSON with answer, sources, isHumanHandoff.',
+      ].join(' '),
+      message,
+      true,
+    );
+
+    return JSON.parse(answer) as ConciergeResponse;
+  }
+
+  async getComparableSales(
+    listingId: string,
+    assetType: AssetType,
+    city: string,
+    priceAmount: number | null,
+  ): Promise<ComparableSalesResponse> {
+    if (IS_MOCK) return mockGetComparableSales(listingId, assetType, city, priceAmount);
+
+    const result = await this.chatComplete(
+      'Generate comparable sales data for a luxury real estate listing. Return JSON.',
+      JSON.stringify({ listingId, assetType, city, priceAmount }),
+      true,
+    );
+
+    return JSON.parse(result) as ComparableSalesResponse;
+  }
+
+  async generateListingDescriptionDual(
+    roughNotes: string,
+    keyFeatures: string[],
+    specs?: ListingSpecs,
+  ): Promise<GenerateListingDescriptionDual> {
+    if (IS_MOCK) return mockGenerateListingDescriptionDual(roughNotes, keyFeatures);
+
+    const enResult = await this.chatComplete(
+      'You are a luxury real estate copywriter. Write a polished, premium listing description.',
+      JSON.stringify({ roughNotes, keyFeatures, specs }),
+    );
+
+    const arResult = await this.chatComplete(
+      'أنت كاتب محترف للعقارات الفاخرة. اكتب وصفاً عربياً راقياً.',
+      JSON.stringify({ roughNotes, keyFeatures, specs }),
+    );
+
+    return {
+      english: enResult,
+      arabic: arResult,
+      seoScore: Math.min(100, 50 + Math.floor(enResult.split(/\s+/).length / 5)),
+      characterCount: enResult.length,
+    };
+  }
+
+  calculateDealHealth(signals: Parameters<typeof mockCalculateDealHealth>[0]): ReturnType<typeof mockCalculateDealHealth> {
+    return mockCalculateDealHealth(signals);
+  }
+
+  // Phase 6: Portfolio insight
+  getPortfolioInsight(assetType: string, daysOnMarket: number): string {
+    return mockGetPortfolioInsight(assetType, daysOnMarket);
+  }
+
+  // Phase 6: Translation with Redis-style cache (DB-backed in routes)
+  async translate(text: string, targetLanguage: string): Promise<TranslationResult> {
+    if (IS_MOCK) {
+      return {
+        originalText: text,
+        translatedText: mockTranslate(text, targetLanguage),
+        targetLanguage,
+        fromCache: false,
+      };
+    }
+
+    const translated = await this.chatComplete(
+      `Translate the following text to ${targetLanguage}. Return only the translation, no preamble.`,
+      text,
+    );
+
+    return {
+      originalText: text,
+      translatedText: translated,
+      targetLanguage,
+      fromCache: false,
+    };
   }
 }
 

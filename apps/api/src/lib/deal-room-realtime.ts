@@ -2,10 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 import type { Socket } from 'socket.io';
 import {
+  SocketCallAnswerSchema,
+  SocketCallEndSchema,
+  SocketCallIceCandidateSchema,
+  SocketCallInitiateSchema,
+  SocketCallOfferSchema,
+  SocketCallRejectSchema,
   SocketFileUploadSchema,
   SocketMessageReadSchema,
   SocketMessageSendSchema,
   SocketRoomJoinSchema,
+  SocketScreenShareSchema,
   SocketTypingSchema,
   type DealRoomMessage,
 } from '@vault/types';
@@ -26,6 +33,7 @@ let io: Server | null = null;
 const roomOnlineUsers = new Map<string, Map<string, number>>();
 const socketRooms = new Map<string, Set<string>>();
 const socketUsers = new Map<string, string>();
+const userSockets = new Map<string, Set<string>>();
 const typingState = new Map<string, Set<string>>();
 const rateLimitState = new Map<string, { count: number; windowStartedAt: number }>();
 
@@ -121,9 +129,20 @@ async function joinDealRoom(socket: Socket, dealRoomId: string): Promise<void> {
   rooms.add(dealRoomId);
   socketRooms.set(socket.id, rooms);
   socketUsers.set(socket.id, user.userId);
+  const sockets = userSockets.get(user.userId) ?? new Set<string>();
+  sockets.add(socket.id);
+  userSockets.set(user.userId, sockets);
   addUserToRoomPresence(dealRoomId, user.userId);
   await touchDealRoomParticipant(dealRoomId, user.userId);
   await emitPresenceUpdate(dealRoomId);
+}
+
+function emitToUser(userId: string, event: string, payload: unknown): void {
+  const sockets = userSockets.get(userId);
+  if (!sockets || !io) return;
+  for (const sid of sockets) {
+    io.to(sid).emit(event, payload);
+  }
 }
 
 function leaveSocketRooms(socket: Socket): void {
@@ -136,6 +155,12 @@ function leaveSocketRooms(socket: Socket): void {
     removeTypingState(dealRoomId, userId);
     void emitPresenceUpdate(dealRoomId);
     emitRoomEvent(dealRoomId, 'typing:update', { userId, isTyping: false });
+  }
+
+  const sockets = userSockets.get(userId);
+  if (sockets) {
+    sockets.delete(socket.id);
+    if (sockets.size === 0) userSockets.delete(userId);
   }
 
   socketRooms.delete(socket.id);
@@ -158,6 +183,10 @@ function getAuthToken(socket: Socket): string | null {
 
 export function getOnlineUserIdsForDealRoom(dealRoomId: string): string[] {
   return Array.from(roomOnlineUsers.get(dealRoomId)?.keys() ?? []);
+}
+
+export function emitNotificationToUser(userId: string, notification: unknown): void {
+  emitToUser(userId, 'notification:new', notification);
 }
 
 export function emitDealRoomStageChange(
@@ -350,6 +379,112 @@ export function registerDealRoomRealtime(app: FastifyInstance): void {
       for (const dealRoomId of joinedRooms) {
         await touchDealRoomParticipant(dealRoomId, user.userId);
         await emitPresenceUpdate(dealRoomId);
+      }
+    });
+
+    // ── WebRTC Signaling ──────────────────────────────────────────────────────
+
+    socket.on('call:initiate', async (payload) => {
+      try {
+        const input = SocketCallInitiateSchema.parse(payload);
+        const initiator = getSocketUser(socket);
+        const participant = await getParticipantForUserInRoom(
+          input.dealRoomId,
+          initiator.userId,
+        );
+        if (!participant) {
+          socket.emit('error', { code: 'DEAL_ROOM_FORBIDDEN', message: 'Not a participant' });
+          return;
+        }
+        emitToUser(input.toUserId, 'call:incoming', {
+          callType: input.callType,
+          dealRoomId: input.dealRoomId,
+          fromUserId: initiator.userId,
+          fromPseudonym: participant.pseudonym,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to initiate call' });
+      }
+    });
+
+    socket.on('call:offer', (payload) => {
+      try {
+        const input = SocketCallOfferSchema.parse(payload);
+        emitToUser(input.toUserId, 'call:offer', {
+          sdp: input.sdp,
+          fromUserId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to relay offer' });
+      }
+    });
+
+    socket.on('call:answer', (payload) => {
+      try {
+        const input = SocketCallAnswerSchema.parse(payload);
+        emitToUser(input.toUserId, 'call:answer', {
+          sdp: input.sdp,
+          fromUserId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to relay answer' });
+      }
+    });
+
+    socket.on('call:ice-candidate', (payload) => {
+      try {
+        const input = SocketCallIceCandidateSchema.parse(payload);
+        emitToUser(input.toUserId, 'call:ice-candidate', {
+          candidate: input.candidate,
+          fromUserId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to relay ICE candidate' });
+      }
+    });
+
+    socket.on('call:reject', (payload) => {
+      try {
+        const input = SocketCallRejectSchema.parse(payload);
+        emitToUser(input.toUserId, 'call:rejected', {
+          fromUserId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to relay rejection' });
+      }
+    });
+
+    socket.on('call:end', (payload) => {
+      try {
+        const input = SocketCallEndSchema.parse(payload);
+        emitRoomEvent(input.dealRoomId, 'call:ended', {
+          byUserId: getSocketUser(socket).userId,
+          callLogId: input.callLogId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to end call' });
+      }
+    });
+
+    socket.on('screen:share-start', (payload) => {
+      try {
+        const input = SocketScreenShareSchema.parse(payload);
+        emitRoomEvent(input.dealRoomId, 'screen:share-started', {
+          userId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to start screen share' });
+      }
+    });
+
+    socket.on('screen:share-stop', (payload) => {
+      try {
+        const input = SocketScreenShareSchema.parse(payload);
+        emitRoomEvent(input.dealRoomId, 'screen:share-stopped', {
+          userId: getSocketUser(socket).userId,
+        });
+      } catch {
+        socket.emit('error', { code: 'CALL_FAILED', message: 'Unable to stop screen share' });
       }
     });
 

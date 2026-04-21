@@ -984,3 +984,597 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
     limit: z.number().int(),
     totalPages: z.number().int(),
   });
+
+// ─── Phase 4: Calling ────────────────────────────────────────────────────────
+
+export const CallTypeEnum = z.enum(['audio', 'video']);
+export type CallType = z.infer<typeof CallTypeEnum>;
+
+export const CallStatusEnum = z.enum(['pending', 'active', 'ended', 'rejected']);
+export type CallStatus = z.infer<typeof CallStatusEnum>;
+
+export const CallLogSchema = z.object({
+  id: z.string().uuid(),
+  dealRoomId: z.string().uuid(),
+  initiatedBy: z.string().uuid().nullable(),
+  participants: z.array(z.string().uuid()),
+  callType: CallTypeEnum,
+  status: CallStatusEnum,
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  durationSeconds: z.number().int().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type CallLog = z.infer<typeof CallLogSchema>;
+
+export const ICEServerSchema = z.object({
+  urls: z.union([z.string(), z.array(z.string())]),
+  username: z.string().optional(),
+  credential: z.string().optional(),
+});
+export type ICEServer = z.infer<typeof ICEServerSchema>;
+
+export const SocketCallInitiateSchema = z.object({
+  dealRoomId: z.string().uuid(),
+  callType: CallTypeEnum,
+  toUserId: z.string().uuid(),
+});
+export type SocketCallInitiate = z.infer<typeof SocketCallInitiateSchema>;
+
+export const SocketCallOfferSchema = z.object({
+  sdp: z.string().min(1),
+  toUserId: z.string().uuid(),
+});
+export type SocketCallOffer = z.infer<typeof SocketCallOfferSchema>;
+
+export const SocketCallAnswerSchema = z.object({
+  sdp: z.string().min(1),
+  toUserId: z.string().uuid(),
+});
+export type SocketCallAnswer = z.infer<typeof SocketCallAnswerSchema>;
+
+export const SocketCallIceCandidateSchema = z.object({
+  candidate: z.string().min(1),
+  toUserId: z.string().uuid(),
+});
+export type SocketCallIceCandidate = z.infer<typeof SocketCallIceCandidateSchema>;
+
+export const SocketCallRejectSchema = z.object({
+  toUserId: z.string().uuid(),
+});
+export type SocketCallReject = z.infer<typeof SocketCallRejectSchema>;
+
+export const SocketCallEndSchema = z.object({
+  dealRoomId: z.string().uuid(),
+  callLogId: z.string().uuid().optional(),
+});
+export type SocketCallEnd = z.infer<typeof SocketCallEndSchema>;
+
+export const SocketScreenShareSchema = z.object({
+  dealRoomId: z.string().uuid(),
+});
+export type SocketScreenShare = z.infer<typeof SocketScreenShareSchema>;
+
+// ─── Phase 4: Scheduling ─────────────────────────────────────────────────────
+
+export const MeetingTypeEnum = z.enum([
+  'property_discussion',
+  'due_diligence',
+  'offer',
+  'virtual_viewing',
+]);
+export type MeetingType = z.infer<typeof MeetingTypeEnum>;
+
+export const MeetingStatusEnum = z.enum(['pending', 'confirmed', 'cancelled', 'completed']);
+export type MeetingStatus = z.infer<typeof MeetingStatusEnum>;
+
+export const MeetingRequestSchema = z.object({
+  id: z.string().uuid(),
+  dealRoomId: z.string().uuid(),
+  requestedBy: z.string().uuid(),
+  meetingType: MeetingTypeEnum,
+  durationMinutes: z.number().int().positive(),
+  timezone: z.string().min(1),
+  status: MeetingStatusEnum,
+  expiresAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type MeetingRequest = z.infer<typeof MeetingRequestSchema>;
+
+export const MeetingAvailabilitySchema = z.object({
+  id: z.string().uuid(),
+  meetingRequestId: z.string().uuid(),
+  userId: z.string().uuid(),
+  slots: z.array(z.string().datetime()),
+  submittedAt: z.string().datetime(),
+});
+export type MeetingAvailability = z.infer<typeof MeetingAvailabilitySchema>;
+
+export const MeetingSchema = z.object({
+  id: z.string().uuid(),
+  meetingRequestId: z.string().uuid(),
+  dealRoomId: z.string().uuid(),
+  meetingType: MeetingTypeEnum,
+  scheduledAt: z.string().datetime(),
+  durationMinutes: z.number().int().positive(),
+  timezone: z.string().min(1),
+  icsUid: z.string().min(1),
+  status: MeetingStatusEnum,
+  createdAt: z.string().datetime(),
+});
+export type Meeting = z.infer<typeof MeetingSchema>;
+
+export const CreateMeetingRequestInputSchema = z.object({
+  meetingType: MeetingTypeEnum,
+  durationMinutes: z.number().int().min(15).max(240),
+  timezone: z.string().min(1).max(100),
+});
+export type CreateMeetingRequestInput = z.infer<typeof CreateMeetingRequestInputSchema>;
+
+export const SubmitAvailabilityInputSchema = z.object({
+  slots: z.array(z.string().datetime()).min(1).max(10),
+});
+export type SubmitAvailabilityInput = z.infer<typeof SubmitAvailabilityInputSchema>;
+
+export const MeetingRequestDetailSchema = MeetingRequestSchema.extend({
+  myAvailability: MeetingAvailabilitySchema.nullable(),
+  confirmedMeeting: MeetingSchema.nullable(),
+});
+export type MeetingRequestDetail = z.infer<typeof MeetingRequestDetailSchema>;
+
+// ─── Phase 4: Notifications ──────────────────────────────────────────────────
+
+export const NotificationCategoryEnum = z.enum([
+  'call',
+  'meeting',
+  'message',
+  'offer',
+  'nda',
+  'deal_stage',
+  'listing',
+  'kyc',
+]);
+export type NotificationCategory = z.infer<typeof NotificationCategoryEnum>;
+
+export const NotificationSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  category: NotificationCategoryEnum,
+  title: z.string(),
+  body: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  entityId: z.string().nullable(),
+  read: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+export type Notification = z.infer<typeof NotificationSchema>;
+
+export const NotificationPreferenceSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  category: NotificationCategoryEnum,
+  inApp: z.boolean(),
+  email: z.boolean(),
+  push: z.boolean(),
+  updatedAt: z.string().datetime(),
+});
+export type NotificationPreference = z.infer<typeof NotificationPreferenceSchema>;
+
+export const UpdateNotificationPreferencesInputSchema = z.object({
+  preferences: z.array(
+    z.object({
+      category: NotificationCategoryEnum,
+      inApp: z.boolean().optional(),
+      email: z.boolean().optional(),
+      push: z.boolean().optional(),
+    }),
+  ),
+});
+export type UpdateNotificationPreferencesInput = z.infer<
+  typeof UpdateNotificationPreferencesInputSchema
+>;
+
+export const WebPushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  p256dh: z.string().min(1),
+  auth: z.string().min(1),
+});
+export type WebPushSubscription = z.infer<typeof WebPushSubscriptionSchema>;
+
+// ─── Phase 5: AI Matching Engine ─────────────────────────────────────────────
+
+export const UserMatchSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  listingId: z.string().uuid(),
+  score: z.number().int().min(0).max(100),
+  explanation: z.string().nullable(),
+  dismissed: z.boolean(),
+  expressedInterest: z.boolean(),
+  saved: z.boolean(),
+  expiresAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
+export type UserMatch = z.infer<typeof UserMatchSchema>;
+
+export const UserMatchWithListingSchema = UserMatchSchema.extend({
+  listing: ListingWithMediaSchema,
+});
+export type UserMatchWithListing = z.infer<typeof UserMatchWithListingSchema>;
+
+export const MatchActionInputSchema = z.object({
+  action: z.enum(['express_interest', 'save', 'dismiss']),
+});
+export type MatchActionInput = z.infer<typeof MatchActionInputSchema>;
+
+// ─── Phase 5: Market Intelligence ────────────────────────────────────────────
+
+export const TransactionVelocityPointSchema = z.object({
+  month: z.string(),
+  deals: z.number().int(),
+});
+export type TransactionVelocityPoint = z.infer<typeof TransactionVelocityPointSchema>;
+
+export const PricePerSqmPointSchema = z.object({
+  month: z.string(),
+  hotel: z.number(),
+  villa: z.number(),
+  commercial_building: z.number(),
+  penthouse_tower: z.number(),
+});
+export type PricePerSqmPoint = z.infer<typeof PricePerSqmPointSchema>;
+
+export const CapRateRangeSchema = z.object({
+  assetType: AssetTypeEnum,
+  min: z.number(),
+  max: z.number(),
+  current: z.number(),
+});
+export type CapRateRange = z.infer<typeof CapRateRangeSchema>;
+
+export const DemandHeatmapPointSchema = z.object({
+  district: z.string(),
+  city: z.string(),
+  intensity: z.number().min(0).max(1),
+  lat: z.number(),
+  lng: z.number(),
+});
+export type DemandHeatmapPoint = z.infer<typeof DemandHeatmapPointSchema>;
+
+export const ActiveBuyerBriefSchema = z.object({
+  assetType: AssetTypeEnum,
+  count: z.number().int(),
+  avgBudgetAed: z.number(),
+});
+export type ActiveBuyerBrief = z.infer<typeof ActiveBuyerBriefSchema>;
+
+export const ForecastPointSchema = z.object({
+  month: z.string(),
+  price: z.number(),
+  confidenceLow: z.number(),
+  confidenceHigh: z.number(),
+  isForecast: z.boolean(),
+});
+export type ForecastPoint = z.infer<typeof ForecastPointSchema>;
+
+export const MarketIntelligenceSchema = z.object({
+  transactionVelocity: z.array(TransactionVelocityPointSchema),
+  pricePerSqm: z.array(PricePerSqmPointSchema),
+  capRates: z.array(CapRateRangeSchema),
+  demandHeatmap: z.array(DemandHeatmapPointSchema),
+  activeBuyerBriefs: z.array(ActiveBuyerBriefSchema),
+  forecast: z.array(ForecastPointSchema),
+  forecastLabel: z.string(),
+  city: z.string(),
+  updatedAt: z.string().datetime(),
+});
+export type MarketIntelligence = z.infer<typeof MarketIntelligenceSchema>;
+
+// ─── Phase 5: Investment Calculator ──────────────────────────────────────────
+
+export const InvestmentCalculatorInputSchema = z.object({
+  purchasePrice: z.number().positive(),
+  currency: z.string().length(3).default('AED'),
+  downPaymentPct: z.number().min(0).max(100),
+  loanTermYears: z.number().int().min(1).max(30),
+  interestRatePct: z.number().min(0).max(30),
+  annualRentalIncome: z.number().min(0),
+  annualExpensesPct: z.number().min(0).max(100),
+  annualAppreciationPct: z.number().min(-20).max(50),
+  transactionCostsPct: z.number().min(0).max(20).default(4),
+  listingId: z.string().uuid().optional(),
+});
+export type InvestmentCalculatorInput = z.infer<typeof InvestmentCalculatorInputSchema>;
+
+export const YearlyProjectionSchema = z.object({
+  year: z.number().int(),
+  propertyValue: z.number(),
+  equity: z.number(),
+  cumulativeRentalIncome: z.number(),
+  annualCashFlow: z.number(),
+  roi: z.number(),
+});
+export type YearlyProjection = z.infer<typeof YearlyProjectionSchema>;
+
+export const InvestmentCalculatorResultSchema = z.object({
+  downPaymentAmount: z.number(),
+  loanAmount: z.number(),
+  monthlyMortgagePayment: z.number(),
+  grossRentalYield: z.number(),
+  netRentalYield: z.number(),
+  annualCashFlow: z.number(),
+  capRate: z.number(),
+  cashOnCashReturn: z.number(),
+  breakEvenYears: z.number(),
+  fiveYearProjection: z.array(YearlyProjectionSchema),
+  currency: z.string().length(3),
+});
+export type InvestmentCalculatorResult = z.infer<typeof InvestmentCalculatorResultSchema>;
+
+export const SaveCalculationInputSchema = z.object({
+  label: z.string().max(255).optional(),
+  listingId: z.string().uuid().optional(),
+  inputs: InvestmentCalculatorInputSchema,
+  results: InvestmentCalculatorResultSchema,
+});
+export type SaveCalculationInput = z.infer<typeof SaveCalculationInputSchema>;
+
+export const SavedCalculationSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  listingId: z.string().uuid().nullable(),
+  label: z.string().nullable(),
+  inputs: InvestmentCalculatorInputSchema,
+  results: InvestmentCalculatorResultSchema,
+  createdAt: z.string().datetime(),
+});
+export type SavedCalculation = z.infer<typeof SavedCalculationSchema>;
+
+// ─── Phase 5: Comparable Sales ───────────────────────────────────────────────
+
+export const ComparableSaleDetailSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  location: z.string(),
+  assetType: AssetTypeEnum,
+  sizeSqm: z.number().nullable(),
+  soldPrice: z.number(),
+  pricePerSqm: z.number().nullable(),
+  currency: z.string().length(3),
+  soldAt: z.string(),
+  similarity: z.number().min(0).max(1),
+});
+export type ComparableSaleDetail = z.infer<typeof ComparableSaleDetailSchema>;
+
+export const ComparableSalesResponseSchema = z.object({
+  comparables: z.array(ComparableSaleDetailSchema),
+  priceVsMarket: z.object({
+    pct: z.number(),
+    label: z.string(),
+    color: z.enum(['green', 'amber', 'red']),
+  }),
+  averagePricePerSqm: z.number().nullable(),
+});
+export type ComparableSalesResponse = z.infer<typeof ComparableSalesResponseSchema>;
+
+// ─── Phase 5: AI Concierge ───────────────────────────────────────────────────
+
+export const ConciergeMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type ConciergeMessage = z.infer<typeof ConciergeMessageSchema>;
+
+export const ConciergeQueryInputSchema = z.object({
+  message: z.string().min(1).max(2000),
+});
+export type ConciergeQueryInput = z.infer<typeof ConciergeQueryInputSchema>;
+
+export const ConciergeResponseSchema = z.object({
+  answer: z.string(),
+  sources: z.array(z.string()).default([]),
+  isHumanHandoff: z.boolean().default(false),
+  ticketId: z.string().uuid().nullable().optional(),
+});
+export type ConciergeResponse = z.infer<typeof ConciergeResponseSchema>;
+
+export const CreateSupportTicketInputSchema = z.object({
+  subject: z.string().min(1).max(255),
+  body: z.string().min(1),
+});
+export type CreateSupportTicketInput = z.infer<typeof CreateSupportTicketInputSchema>;
+
+// ─── Phase 5: Deal Health Score ──────────────────────────────────────────────
+
+export const DealHealthSignalsSchema = z.object({
+  messagesPerDay: z.number(),
+  docsUploaded: z.number().int(),
+  offersSubmitted: z.number().int(),
+  meetingsHeld: z.number().int(),
+  daysSinceLastMessage: z.number().int().nullable(),
+  daysActive: z.number().int(),
+});
+export type DealHealthSignals = z.infer<typeof DealHealthSignalsSchema>;
+
+export const DealHealthScoreSchema = z.object({
+  dealRoomId: z.string().uuid(),
+  score: z.number().int().min(0).max(100),
+  label: z.enum(['active', 'slow', 'stalled']),
+  signals: DealHealthSignalsSchema,
+  recommendation: z.string().nullable(),
+});
+export type DealHealthScore = z.infer<typeof DealHealthScoreSchema>;
+
+// ─── Phase 5: Enhanced Listing Description ────────────────────────────────────
+
+export const GenerateListingDescriptionInputSchema = z.object({
+  roughNotes: z.string().min(1).max(5000),
+  keyFeatures: z.array(z.string()).max(20).optional(),
+  specs: ListingSpecsSchema.optional(),
+  includeArabic: z.boolean().default(false),
+});
+export type GenerateListingDescriptionInput = z.infer<typeof GenerateListingDescriptionInputSchema>;
+
+export const GenerateListingDescriptionDualSchema = z.object({
+  english: z.string(),
+  arabic: z.string().optional(),
+  seoScore: z.number().int().min(0).max(100),
+  characterCount: z.number().int(),
+});
+export type GenerateListingDescriptionDual = z.infer<typeof GenerateListingDescriptionDualSchema>;
+
+// ─── Phase 6: Off-Market Buyer Briefs ─────────────────────────────────────────
+
+export const BuyerBriefSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  title: z.string(),
+  assetTypes: z.array(z.string()),
+  cities: z.array(z.string()),
+  minPrice: z.string().nullable(),
+  maxPrice: z.string().nullable(),
+  currency: z.string().default('AED'),
+  minSizeSqm: z.number().int().nullable(),
+  maxSizeSqm: z.number().int().nullable(),
+  minBedrooms: z.number().int().nullable(),
+  maxBedrooms: z.number().int().nullable(),
+  description: z.string().nullable(),
+  status: z.enum(['active', 'paused', 'closed']),
+  matchedListingIds: z.array(z.string()),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type BuyerBrief = z.infer<typeof BuyerBriefSchema>;
+
+export const CreateBuyerBriefInputSchema = z.object({
+  title: z.string().min(1).max(255),
+  assetTypes: z.array(z.string()).min(1),
+  cities: z.array(z.string()).min(1),
+  minPrice: z.number().nullable().optional(),
+  maxPrice: z.number().nullable().optional(),
+  currency: z.string().default('AED'),
+  minSizeSqm: z.number().int().nullable().optional(),
+  maxSizeSqm: z.number().int().nullable().optional(),
+  minBedrooms: z.number().int().nullable().optional(),
+  maxBedrooms: z.number().int().nullable().optional(),
+  description: z.string().max(5000).nullable().optional(),
+});
+export type CreateBuyerBriefInput = z.infer<typeof CreateBuyerBriefInputSchema>;
+
+export const UpdateBuyerBriefInputSchema = z.object({
+  title: z.string().min(1).max(255).optional(),
+  status: z.enum(['active', 'paused', 'closed']).optional(),
+  description: z.string().max(5000).nullable().optional(),
+});
+export type UpdateBuyerBriefInput = z.infer<typeof UpdateBuyerBriefInputSchema>;
+
+// ─── Phase 6: Portfolio Tracker ───────────────────────────────────────────────
+
+export const PortfolioStageEnum = z.enum(['saved', 'interested', 'nda', 'due_diligence', 'offer', 'won']);
+export type PortfolioStage = z.infer<typeof PortfolioStageEnum>;
+
+export const PortfolioEntrySchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  listingId: z.string().uuid().nullable(),
+  listingSnapshot: z.record(z.unknown()),
+  stage: PortfolioStageEnum,
+  customLabel: z.string().nullable(),
+  aiInsight: z.string().nullable(),
+  lastAiInsightAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type PortfolioEntry = z.infer<typeof PortfolioEntrySchema>;
+
+export const CreatePortfolioEntryInputSchema = z.object({
+  listingId: z.string().uuid(),
+  stage: PortfolioStageEnum.default('saved'),
+  customLabel: z.string().max(255).nullable().optional(),
+});
+export type CreatePortfolioEntryInput = z.infer<typeof CreatePortfolioEntryInputSchema>;
+
+export const UpdatePortfolioEntryInputSchema = z.object({
+  stage: PortfolioStageEnum.optional(),
+  customLabel: z.string().max(255).nullable().optional(),
+});
+export type UpdatePortfolioEntryInput = z.infer<typeof UpdatePortfolioEntryInputSchema>;
+
+export const PortfolioNoteSchema = z.object({
+  id: z.string().uuid(),
+  entryId: z.string().uuid(),
+  userId: z.string().uuid(),
+  encryptedNote: z.object({
+    ciphertext: z.string(),
+    iv: z.string(),
+    algorithm: z.string(),
+    keyHint: z.string().optional(),
+  }),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type PortfolioNote = z.infer<typeof PortfolioNoteSchema>;
+
+export const ComparisonRequestSchema = z.object({
+  entryIds: z.array(z.string().uuid()).min(2).max(4),
+});
+export type ComparisonRequest = z.infer<typeof ComparisonRequestSchema>;
+
+// ─── Phase 6: Multi-Role Deal Teams ───────────────────────────────────────────
+
+export const DealTeamRoleEnum = z.enum(['lead', 'co_investor', 'legal', 'financial', 'observer']);
+export type DealTeamRole = z.infer<typeof DealTeamRoleEnum>;
+
+export const DealTeamMemberSchema = z.object({
+  id: z.string().uuid(),
+  dealRoomId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: DealTeamRoleEnum,
+  pseudonym: z.string().nullable(),
+  invitedBy: z.string().uuid().nullable(),
+  acceptedAt: z.string().nullable(),
+  createdAt: z.string(),
+  userEmail: z.string().optional(),
+  userDisplayName: z.string().nullable().optional(),
+});
+export type DealTeamMember = z.infer<typeof DealTeamMemberSchema>;
+
+export const InviteDealTeamMemberInputSchema = z.object({
+  email: z.string().email(),
+  role: DealTeamRoleEnum,
+  pseudonym: z.string().max(100).nullable().optional(),
+});
+export type InviteDealTeamMemberInput = z.infer<typeof InviteDealTeamMemberInputSchema>;
+
+export const UpdateDealTeamMemberInputSchema = z.object({
+  role: DealTeamRoleEnum.optional(),
+  pseudonym: z.string().max(100).nullable().optional(),
+});
+export type UpdateDealTeamMemberInput = z.infer<typeof UpdateDealTeamMemberInputSchema>;
+
+// ─── Phase 6: Translation ─────────────────────────────────────────────────────
+
+export const TranslationResultSchema = z.object({
+  originalText: z.string(),
+  translatedText: z.string(),
+  targetLanguage: z.string(),
+  fromCache: z.boolean().default(false),
+});
+export type TranslationResult = z.infer<typeof TranslationResultSchema>;
+
+export const TranslationInputSchema = z.object({
+  text: z.string().min(1).max(10000),
+  targetLanguage: z.string().min(2).max(10),
+});
+export type TranslationInput = z.infer<typeof TranslationInputSchema>;
+
+// ─── Phase 6: Seller Motivation Filter ───────────────────────────────────────
+
+export const SellerMotivationFilterSchema = z.object({
+  motivations: z.array(z.string()).optional(),
+  maxDaysOnMarket: z.number().int().nullable().optional(),
+  minListingQualityScore: z.number().int().nullable().optional(),
+  titleDeedVerified: z.boolean().optional(),
+});
+export type SellerMotivationFilter = z.infer<typeof SellerMotivationFilterSchema>;

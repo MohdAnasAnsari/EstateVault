@@ -47,7 +47,7 @@ async function getSodium() {
   return _sodium;
 }
 
-function getCrypto(): Crypto {
+function getCrypto(): typeof globalThis.crypto {
   return globalThis.crypto;
 }
 
@@ -88,7 +88,7 @@ function arrayBufferToBytes(buffer: ArrayBuffer): Uint8Array {
 }
 
 function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function parseEncryptedPrivateKey(encryptedPrivateKey: string): EncryptedPrivateKeyPayload {
@@ -98,7 +98,7 @@ function parseEncryptedPrivateKey(encryptedPrivateKey: string): EncryptedPrivate
 async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
   const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
-    utf8ToBytes(password),
+    bytesToArrayBuffer(utf8ToBytes(password)),
     'PBKDF2',
     false,
     ['deriveBits'],
@@ -108,7 +108,7 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Ui
     {
       name: 'PBKDF2',
       hash: 'SHA-256',
-      salt,
+      salt: bytesToArrayBuffer(salt),
       iterations: PBKDF2_ITERATIONS,
     },
     keyMaterial,
@@ -119,7 +119,13 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Ui
 }
 
 async function importAesKey(keyBytes: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
-  return getCrypto().subtle.importKey('raw', keyBytes, 'AES-GCM', false, [usage]);
+  return getCrypto().subtle.importKey(
+    'raw',
+    bytesToArrayBuffer(keyBytes),
+    'AES-GCM',
+    false,
+    [usage],
+  );
 }
 
 async function encryptAesBuffer(
@@ -128,7 +134,11 @@ async function encryptAesBuffer(
   iv: Uint8Array,
 ): Promise<ArrayBuffer> {
   const cryptoKey = await importAesKey(keyBytes, 'encrypt');
-  return getCrypto().subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plaintext);
+  return getCrypto().subtle.encrypt(
+    { name: 'AES-GCM', iv: bytesToArrayBuffer(iv) },
+    cryptoKey,
+    bytesToArrayBuffer(plaintext),
+  );
 }
 
 async function decryptAesBuffer(
@@ -137,7 +147,11 @@ async function decryptAesBuffer(
   iv: Uint8Array,
 ): Promise<ArrayBuffer> {
   const cryptoKey = await importAesKey(keyBytes, 'decrypt');
-  return getCrypto().subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+  return getCrypto().subtle.decrypt(
+    { name: 'AES-GCM', iv: bytesToArrayBuffer(iv) },
+    cryptoKey,
+    bytesToArrayBuffer(ciphertext),
+  );
 }
 
 export async function generateRawKeyPair(): Promise<RawKeyPair> {

@@ -58,15 +58,65 @@ export function FilterSidebar({ searchParams }: FilterSidebarProps) {
         <div className="space-y-3">
           <p className="text-sm text-stone-300">Seller intent</p>
           <div className="grid gap-2 text-sm text-stone-400">
-            {['motivated', 'testing_market', 'best_offers', 'fast_close', 'price_flexible'].map((value) => {
+            {[
+              { value: 'motivated', label: 'Motivated seller' },
+              { value: 'testing_market', label: 'Testing market' },
+              { value: 'best_offers', label: 'Best offers' },
+              { value: 'fast_close', label: 'Fast close' },
+              { value: 'price_flexible', label: 'Price flexible' },
+            ].map(({ value, label }) => {
               const params = new URLSearchParams(current);
               params.set('motivation', value);
+              const isActive = searchParams.motivation === value;
               return (
-                <Link key={value} href={`/listings?${params.toString()}`} className="pill justify-center text-center">
-                  {value.replaceAll('_', ' ')}
+                <Link
+                  key={value}
+                  href={isActive ? '/listings' : `/listings?${params.toString()}`}
+                  className={`pill justify-center text-center ${isActive ? 'border-amber-300/40 text-amber-100' : ''}`}
+                >
+                  {label}
                 </Link>
               );
             })}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm text-stone-300">Quality</p>
+          <div className="grid gap-2 text-sm text-stone-400">
+            {['platinum', 'gold', 'silver', 'bronze'].map((tier) => {
+              const params = new URLSearchParams(current);
+              params.set('qualityTier', tier);
+              const isActive = searchParams.qualityTier === tier;
+              return (
+                <Link
+                  key={tier}
+                  href={isActive ? '/listings' : `/listings?${params.toString()}`}
+                  className={`pill justify-center text-center capitalize ${isActive ? 'border-amber-300/40 text-amber-100' : ''}`}
+                >
+                  {tier}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm text-stone-300">Verification</p>
+          <div className="grid gap-2 text-sm text-stone-400">
+            {(() => {
+              const params = new URLSearchParams(current);
+              params.set('titleDeedVerified', 'true');
+              const isActive = searchParams.titleDeedVerified === 'true';
+              return (
+                <Link
+                  href={isActive ? '/listings' : `/listings?${params.toString()}`}
+                  className={`pill justify-center text-center ${isActive ? 'border-amber-300/40 text-amber-100' : ''}`}
+                >
+                  Title deed verified
+                </Link>
+              );
+            })()}
           </div>
         </div>
       </div>

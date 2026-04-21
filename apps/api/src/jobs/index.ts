@@ -1,8 +1,8 @@
 import { Queue, Worker, type Job } from 'bullmq';
-import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { aiService } from '@vault/ai';
 import { getDb } from '@vault/db';
-import { adminAlerts, amlScreenings, listings, users } from '@vault/db/schema';
+import { adminAlerts, amlScreenings, listings, userMatches, users } from '@vault/db/schema';
 import { mockAMLScreening, mockSendEmail } from '@vault/mocks';
 
 const redisUrl = new URL(process.env['REDIS_URL'] ?? 'redis://localhost:6379');
@@ -18,6 +18,7 @@ export const embeddingQueue = new Queue('listing-embedding', { connection });
 export const fraudQueue = new Queue('listing-fraud-check', { connection });
 export const amlQueue = new Queue('aml-screening', { connection });
 export const reraReminderQueue = new Queue('rera-reminder', { connection });
+export const matchingQueue = new Queue('ai-matching', { connection });
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -265,6 +266,98 @@ function startAMLWorker(): Worker {
   );
 }
 
+function startMatchingWorker(): Worker {
+  return new Worker(
+    'ai-matching',
+    async (job: Job<{ userId?: string; listingId?: string }>) => {
+      const db = getDb();
+
+      // Determine which buyers to re-match
+      let buyerIds: string[] = [];
+      if (job.data.userId) {
+        buyerIds = [job.data.userId];
+      } else if (job.data.listingId) {
+        // New listing went active — match against all buyers
+        const buyerRows = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.role, 'buyer'));
+        buyerIds = buyerRows.map((r) => r.id);
+      }
+
+      if (buyerIds.length === 0) return;
+
+      // Fetch candidate active listings
+      const candidateListings = await db
+        .select({
+          id: listings.id,
+          title: listings.title,
+          assetType: listings.assetType,
+          city: listings.city,
+          country: listings.country,
+          priceAmount: listings.priceAmount,
+          embedding: listings.embedding,
+          titleDeedVerified: listings.titleDeedVerified,
+          sellerMotivation: listings.sellerMotivation,
+          commercialData: listings.commercialData,
+        })
+        .from(listings)
+        .where(and(eq(listings.status, 'active'), isNotNull(listings.priceAmount)))
+        .limit(200);
+
+      for (const buyerId of buyerIds) {
+        const [buyer] = await db
+          .select({ preferenceEmbedding: users.preferenceEmbedding, nationality: users.nationality })
+          .from(users)
+          .where(eq(users.id, buyerId))
+          .limit(1);
+
+        if (!buyer) continue;
+
+        // Use buyer's preference embedding or generate a generic one
+        const buyerEmb: number[] =
+          buyer.preferenceEmbedding ??
+          (await aiService.getEmbedding(`buyer ${buyer.nationality ?? ''} trophy real estate`));
+
+        // Score each listing
+        const scored = candidateListings
+          .map((listing) => {
+            if (!listing.embedding) return null;
+            const similarity = cosineSimilarity(buyerEmb, listing.embedding);
+            let score = Math.round(similarity * 80);
+
+            // Score boosts
+            if (listing.titleDeedVerified) score = Math.min(100, score + 5);
+            if (listing.sellerMotivation === 'motivated') score = Math.min(100, score + 3);
+
+            return { listing, score };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null && x.score > 20)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 10);
+
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        for (const { listing, score } of scored) {
+          const explanation = await aiService.generateMatchExplanation(
+            { nationality: buyer.nationality },
+            { assetType: listing.assetType, city: listing.city, priceAmount: listing.priceAmount, titleDeedVerified: listing.titleDeedVerified, sellerMotivation: listing.sellerMotivation },
+          );
+
+          await db
+            .insert(userMatches)
+            .values({ userId: buyerId, listingId: listing.id, score, explanation, expiresAt })
+            .onConflictDoUpdate({
+              target: [userMatches.userId, userMatches.listingId],
+              set: { score, explanation, dismissed: false, expiresAt },
+            });
+        }
+      }
+    },
+    { connection },
+  );
+}
+
 function startReraReminderWorker(): Worker {
   return new Worker(
     'rera-reminder',
@@ -301,6 +394,14 @@ export async function queueAMLScreening(userId: string): Promise<void> {
   await amlQueue.add('aml-screening', { userId });
 }
 
+export async function queueMatchingForUser(userId: string): Promise<void> {
+  await matchingQueue.add('match-user', { userId });
+}
+
+export async function queueMatchingForListing(listingId: string): Promise<void> {
+  await matchingQueue.add('match-listing', { listingId });
+}
+
 export async function startJobs(): Promise<void> {
   await livenessQueue.upsertJobScheduler(
     'daily-liveness',
@@ -319,6 +420,7 @@ export async function startJobs(): Promise<void> {
     startFraudWorker(),
     startAMLWorker(),
     startReraReminderWorker(),
+    startMatchingWorker(),
   ];
 
   for (const worker of workers) {

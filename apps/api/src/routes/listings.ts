@@ -8,16 +8,18 @@ import { listingMedia, listings, savedListings } from '@vault/db/schema';
 import {
   CreateListingInputSchema,
   GenerateDescriptionInputSchema,
+  GenerateListingDescriptionInputSchema,
   ListingQuerySchema,
   NLSearchQuerySchema,
   TitleDeedVerificationInputSchema,
   UpdateListingInputSchema,
 } from '@vault/types';
 import { mockVerifyTitleDeed } from '@vault/mocks';
-import { queueFraudCheck } from '../jobs/index.js';
+import { queueFraudCheck, queueMatchingForListing } from '../jobs/index.js';
 import { requireAuth, requireLevel3, isSeller } from '../lib/auth.js';
 import { handleZodError, sendError } from '../lib/errors.js';
 import { serializeListing, serializeListingWithMedia } from '../lib/serializers.js';
+import { getComparableSales } from '../lib/comparable-sales.js';
 
 function generateSlug(title: string): string {
   return `${slugify(title, { lower: true, strict: true })}-${Date.now().toString(36)}`;
@@ -564,6 +566,63 @@ export async function listingRoutes(app: FastifyInstance) {
     } catch (error) {
       if (error instanceof ZodError) return handleZodError(reply, error);
       throw error;
+    }
+  });
+
+  // Phase 5: dual EN+AR description with notes
+  app.post('/:id/ai-description-dual', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const input = GenerateListingDescriptionInputSchema.parse(request.body);
+      const db = getDb();
+      const [listing] = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+
+      if (!listing) return sendError(reply, 404, 'NOT_FOUND', 'Listing not found');
+      if (listing.sellerId !== request.user.userId && request.user.role !== 'admin') {
+        return sendError(reply, 403, 'FORBIDDEN', 'Not authorized');
+      }
+
+      const result = await aiService.generateListingDescriptionDual(
+        input.roughNotes,
+        input.keyFeatures ?? [],
+      );
+
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      if (error instanceof ZodError) return handleZodError(reply, error);
+      throw error;
+    }
+  });
+
+  // Phase 5: AI price recommendation
+  app.get('/:id/price-recommendation', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const db = getDb();
+      const [listing] = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+
+      if (!listing) return sendError(reply, 404, 'NOT_FOUND', 'Listing not found');
+      if (listing.sellerId !== request.user.userId && request.user.role !== 'admin') {
+        return sendError(reply, 403, 'FORBIDDEN', 'Not authorized');
+      }
+
+      const recommendation = await aiService.getPriceRecommendation(serializeListing(listing));
+      return reply.send({ success: true, data: recommendation });
+    } catch (error) {
+      app.log.error(error);
+      return sendError(reply, 500, 'INTERNAL_ERROR', 'Failed to get price recommendation');
+    }
+  });
+
+  // Phase 5: Comparable sales
+  app.get('/:id/comparables', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const data = await getComparableSales(id);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      app.log.error(error);
+      return sendError(reply, 500, 'INTERNAL_ERROR', 'Failed to fetch comparables');
     }
   });
 }

@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "VAULT",
+    "slug": "vault-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vault.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.vault.mobile"
+    },
+    "plugins": [
+      "expo-local-authentication",
+      "expo-notifications"
+    ]
+  }
+}

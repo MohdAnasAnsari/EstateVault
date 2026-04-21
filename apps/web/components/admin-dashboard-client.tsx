@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { VaultApiClient } from '@vault/api-client';
-import type { AdminAlert, AdminOverview, AMLScreening, KycSubmission, Listing, User } from '@vault/types';
+import type { AdminAlert, AdminOverview, AMLScreening, DealHealthScore, KycSubmission, Listing, User } from '@vault/types';
 import { Badge, Button, Input } from '@vault/ui';
 import { useAuth } from './providers/auth-provider';
+import { DealHealthGauge } from './deal-health-gauge';
 
 type KycQueueItem = { submission: KycSubmission; user: User };
 type PendingListingItem = { listing: Listing; seller: User };
 
-const TABS = ['overview', 'kyc', 'listings', 'compliance', 'users', 'metrics'] as const;
+const TABS = ['overview', 'kyc', 'listings', 'compliance', 'users', 'deal-health', 'metrics'] as const;
 
 export function AdminDashboardClient() {
   const { token, user, setAuth } = useAuth();
@@ -21,6 +22,7 @@ export function AdminDashboardClient() {
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string | null>(null);
+  const [dealHealthScores, setDealHealthScores] = useState<DealHealthScore[]>([]);
 
   const client = useMemo(
     () =>
@@ -252,6 +254,34 @@ export function AdminDashboardClient() {
               </div>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {tab === 'deal-health' ? (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl text-stone-100">Deal Health Monitor</h2>
+            <button
+              type="button"
+              onClick={() => {
+                void client.getAllDealHealthScores().then((res) => {
+                  if (res.success && res.data) setDealHealthScores(res.data);
+                });
+              }}
+              className="rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500"
+            >
+              Refresh
+            </button>
+          </div>
+          {dealHealthScores.length === 0 ? (
+            <p className="text-sm text-stone-400">No active deal rooms — click Refresh to load.</p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {dealHealthScores.map((health) => (
+                <DealHealthGauge key={health.dealRoomId} dealRoomId={health.dealRoomId} token={token} />
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 

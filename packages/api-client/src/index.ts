@@ -4,18 +4,35 @@ import type {
   AddMessageReactionInput,
   AMLScreening,
   AuthPayload,
+  BuyerBrief,
+  CallLog,
+  CallType,
+  ComparableSalesResponse,
+  ConciergeQueryInput,
+  ConciergeResponse,
+  CreateBuyerBriefInput,
   CreateListingInput,
+  CreateMeetingRequestInput,
   CreateOfferInput,
+  CreatePortfolioEntryInput,
   CurrencyConvertResponse,
   CurrencyRate,
+  DealHealthScore,
   DealRoomAssistantSuggestion,
   DealRoomDetail,
   DealRoomDocumentAnalysis,
   DealRoomFile,
   DealRoomMessage,
   DealRoomSummary,
+  DealTeamMember,
   GenerateDescriptionResponse,
   GenerateKeysResponse,
+  GenerateListingDescriptionDual,
+  GenerateListingDescriptionInput,
+  ICEServer,
+  InviteDealTeamMemberInput,
+  InvestmentCalculatorInput,
+  InvestmentCalculatorResult,
   KycStatusResponse,
   KycSubmission,
   KycWizardSubmitInput,
@@ -24,21 +41,40 @@ import type {
   ListingReviewActionInput,
   ListingWithMedia,
   LoginInput,
+  MarketIntelligence,
+  MatchActionInput,
+  MeetingRequest,
+  MeetingRequestDetail,
   NDA,
   NLSearchQuery,
+  Notification,
+  NotificationPreference,
   Offer,
+  PortfolioEntry,
+  PortfolioNote,
+  PriceRecommendation,
   RegisterInput,
   ReraValidationResult,
+  SaveCalculationInput,
+  SavedCalculation,
   SavedListingWithListing,
   SearchFilters,
   SignNDAInput,
+  SubmitAvailabilityInput,
+  TranslationResult,
+  UpdateBuyerBriefInput,
+  UpdateDealTeamMemberInput,
+  UpdateNotificationPreferencesInput,
+  UpdatePortfolioEntryInput,
   UploadDealRoomFileInput,
   TitleDeedVerificationInput,
   TitleDeedVerificationResult,
   UpdateListingInput,
   UpdateProfileInput,
   UserKeyMaterial,
+  UserMatchWithListing,
   User,
+  WebPushSubscription,
   KycReviewActionInput,
 } from '@vault/types';
 
@@ -209,6 +245,18 @@ export class VaultApiClient {
     return this.post<GenerateDescriptionResponse>(`/listings/${id}/ai-description`, { lang });
   }
 
+  generateListingDescriptionDual(id: string, input: GenerateListingDescriptionInput) {
+    return this.post<GenerateListingDescriptionDual>(`/listings/${id}/ai-description-dual`, input);
+  }
+
+  getListingPriceRecommendation(id: string) {
+    return this.get<PriceRecommendation>(`/listings/${id}/price-recommendation`);
+  }
+
+  getListingComparables(id: string) {
+    return this.get<ComparableSalesResponse>(`/listings/${id}/comparables`);
+  }
+
   getMe() {
     return this.get<User>('/users/me');
   }
@@ -349,6 +397,231 @@ export class VaultApiClient {
     return this.get<CurrencyConvertResponse>(
       `/currency/convert?from=${from}&to=${to}&amount=${amount}`,
     );
+  }
+
+  // ── Notifications ────────────────────────────────────────────────────────────
+
+  getNotifications(limit = 30, offset = 0) {
+    return this.get<{ items: Notification[]; unreadCount: number }>(
+      `/notifications?limit=${limit}&offset=${offset}`,
+    );
+  }
+
+  markNotificationRead(id: string) {
+    return this.patch<Notification>(`/notifications/${id}/read`);
+  }
+
+  markAllNotificationsRead() {
+    return this.patch<{ markedRead: boolean }>('/notifications/read-all');
+  }
+
+  getNotificationPreferences() {
+    return this.get<NotificationPreference[]>('/notifications/preferences');
+  }
+
+  updateNotificationPreferences(input: UpdateNotificationPreferencesInput) {
+    return this.patch<NotificationPreference[]>('/notifications/preferences', input);
+  }
+
+  subscribeWebPush(subscription: WebPushSubscription) {
+    return this.post<{ subscribed: boolean }>('/notifications/web-push/subscribe', subscription);
+  }
+
+  unsubscribeWebPush(subscription: WebPushSubscription) {
+    return this.delete<{ unsubscribed: boolean }>('/notifications/web-push/subscribe');
+  }
+
+  // ── Meetings ─────────────────────────────────────────────────────────────────
+
+  getDealRoomMeetings(dealRoomId: string) {
+    return this.get<MeetingRequest[]>(`/meetings/deal-rooms/${dealRoomId}/meetings`);
+  }
+
+  createMeetingRequest(dealRoomId: string, input: CreateMeetingRequestInput) {
+    return this.post<MeetingRequest>(`/meetings/deal-rooms/${dealRoomId}/meetings`, input);
+  }
+
+  getMeetingRequestDetail(meetingRequestId: string) {
+    return this.get<MeetingRequestDetail>(`/meetings/requests/${meetingRequestId}`);
+  }
+
+  submitMeetingAvailability(meetingRequestId: string, input: SubmitAvailabilityInput) {
+    return this.post<{ availability: unknown; confirmedMeeting: unknown }>(
+      `/meetings/requests/${meetingRequestId}/availability`,
+      input,
+    );
+  }
+
+  cancelMeetingRequest(meetingRequestId: string) {
+    return this.post<MeetingRequest>(`/meetings/requests/${meetingRequestId}/cancel`);
+  }
+
+  getMeetingICSUrl(meetingId: string) {
+    return `${this.baseUrl}/meetings/confirmed/${meetingId}/ics`;
+  }
+
+  // ── Calls ────────────────────────────────────────────────────────────────────
+
+  getICEServers() {
+    return this.get<ICEServer[]>('/calls/ice-servers');
+  }
+
+  getDealRoomCallLogs(dealRoomId: string) {
+    return this.get<CallLog[]>(`/calls/deal-rooms/${dealRoomId}/calls`);
+  }
+
+  startCall(dealRoomId: string, callType: CallType, participantIds: string[]) {
+    return this.post<CallLog>(`/calls/deal-rooms/${dealRoomId}/calls`, {
+      callType,
+      participantIds,
+    });
+  }
+
+  endCall(callLogId: string) {
+    return this.patch<CallLog>(`/calls/logs/${callLogId}/end`);
+  }
+
+  // ── Phase 5: AI Matching ─────────────────────────────────────────────────────
+
+  getMatches() {
+    return this.get<UserMatchWithListing[]>('/matches');
+  }
+
+  refreshMatches() {
+    return this.post<{ queued: boolean }>('/matches/refresh');
+  }
+
+  applyMatchAction(matchId: string, action: MatchActionInput['action']) {
+    return this.patch<{ updated: boolean }>(`/matches/${matchId}`, { action });
+  }
+
+  // ── Phase 5: Market Intelligence ─────────────────────────────────────────────
+
+  getMarketIntelligence(city = 'Dubai') {
+    return this.get<MarketIntelligence>(`/market-intelligence?city=${encodeURIComponent(city)}`);
+  }
+
+  // ── Phase 5: Investment Calculator ───────────────────────────────────────────
+
+  calculateInvestment(input: InvestmentCalculatorInput) {
+    return this.post<InvestmentCalculatorResult>('/calculator/calculate', input);
+  }
+
+  saveCalculation(input: SaveCalculationInput) {
+    return this.post<SavedCalculation>('/calculator/save', input);
+  }
+
+  getSavedCalculations() {
+    return this.get<SavedCalculation[]>('/calculator/saved');
+  }
+
+  // ── Phase 5: AI Concierge ────────────────────────────────────────────────────
+
+  queryConcierg(input: ConciergeQueryInput) {
+    return this.post<ConciergeResponse>('/concierge/query', input);
+  }
+
+  // ── Phase 5: Deal Health (Admin) ─────────────────────────────────────────────
+
+  getDealHealthScore(dealRoomId: string) {
+    return this.get<DealHealthScore>(`/admin/deal-rooms/${dealRoomId}/health`);
+  }
+
+  getAllDealHealthScores() {
+    return this.get<DealHealthScore[]>('/admin/deal-rooms/health');
+  }
+
+  // ── Phase 6: Off-Market Buyer Briefs ─────────────────────────────────────────
+
+  getMyBriefs() {
+    return this.get<BuyerBrief[]>('/off-market');
+  }
+
+  createBrief(input: CreateBuyerBriefInput) {
+    return this.post<BuyerBrief>('/off-market', input);
+  }
+
+  updateBrief(id: string, input: UpdateBuyerBriefInput) {
+    return this.request<BuyerBrief>(`/off-market/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteBrief(id: string) {
+    return this.delete<{ deleted: boolean }>(`/off-market/${id}`);
+  }
+
+  getMatchedListingsForBriefs() {
+    return this.get<Listing[]>('/off-market/matched');
+  }
+
+  // ── Phase 6: Portfolio Tracker ───────────────────────────────────────────────
+
+  getPortfolio() {
+    return this.get<PortfolioEntry[]>('/portfolio');
+  }
+
+  addToPortfolio(input: CreatePortfolioEntryInput) {
+    return this.post<PortfolioEntry>('/portfolio', input);
+  }
+
+  updatePortfolioEntry(id: string, input: UpdatePortfolioEntryInput) {
+    return this.request<PortfolioEntry>(`/portfolio/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  }
+
+  removeFromPortfolio(id: string) {
+    return this.delete<{ deleted: boolean }>(`/portfolio/${id}`);
+  }
+
+  getPortfolioInsight(id: string) {
+    return this.get<PortfolioEntry>(`/portfolio/${id}/insight`);
+  }
+
+  savePortfolioNote(id: string, body: { encryptedNote: object }) {
+    return this.post<PortfolioNote>(`/portfolio/${id}/notes`, body);
+  }
+
+  getPortfolioNotes(id: string) {
+    return this.get<PortfolioNote[]>(`/portfolio/${id}/notes`);
+  }
+
+  comparePortfolioEntries(entryIds: string[]) {
+    return this.post<PortfolioEntry[]>('/portfolio/compare', { entryIds });
+  }
+
+  // ── Phase 6: Multi-Role Deal Teams ───────────────────────────────────────────
+
+  getDealTeam(dealRoomId: string) {
+    return this.get<DealTeamMember[]>(`/deal-teams/deal-rooms/${dealRoomId}`);
+  }
+
+  inviteDealTeamMember(dealRoomId: string, input: InviteDealTeamMemberInput) {
+    return this.post<DealTeamMember>(`/deal-teams/deal-rooms/${dealRoomId}`, input);
+  }
+
+  updateDealTeamMember(dealRoomId: string, memberId: string, input: UpdateDealTeamMemberInput) {
+    return this.request<DealTeamMember>(`/deal-teams/deal-rooms/${dealRoomId}/members/${memberId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  }
+
+  removeDealTeamMember(dealRoomId: string, memberId: string) {
+    return this.delete<{ removed: boolean }>(`/deal-teams/deal-rooms/${dealRoomId}/members/${memberId}`);
+  }
+
+  acceptDealTeamInvite(dealRoomId: string, memberId: string) {
+    return this.post<DealTeamMember>(`/deal-teams/deal-rooms/${dealRoomId}/members/${memberId}/accept`);
+  }
+
+  // ── Phase 6: Translation ──────────────────────────────────────────────────────
+
+  translate(text: string, targetLanguage: string) {
+    return this.post<TranslationResult>('/translation', { text, targetLanguage });
   }
 }
 

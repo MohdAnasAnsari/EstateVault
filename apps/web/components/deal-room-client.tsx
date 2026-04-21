@@ -4,7 +4,6 @@ import Link from 'next/link';
 import {
   startTransition,
   useEffect,
-  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -12,6 +11,7 @@ import {
 import { io, type Socket } from 'socket.io-client';
 import {
   Bot,
+  Calendar,
   Check,
   CheckCheck,
   Clock3,
@@ -22,11 +22,14 @@ import {
   Handshake,
   Landmark,
   LockKeyhole,
+  Mic,
   Paperclip,
+  Phone,
   Send,
   ShieldCheck,
   Sparkles,
   UnlockKeyhole,
+  Video,
 } from 'lucide-react';
 import { VaultApiClient } from '@vault/api-client';
 import { encodeBase64 } from '@vault/crypto';
@@ -36,12 +39,21 @@ import type {
   DealRoomFile,
   DealRoomMessage,
   DealRoomParticipant,
+  ICEServer,
+  MeetingRequest,
+  MeetingType,
   Offer,
   ReactionEmoji,
 } from '@vault/types';
 import { Badge, Button, Input, Label } from '@vault/ui';
 import { decryptDealRoomEnvelope, decryptDealRoomFile, encryptDealRoomEnvelope, encryptDealRoomFile } from '@/lib/deal-room-crypto';
 import { useAuth } from '@/components/providers/auth-provider';
+import { CallOverlay, type CallState } from './call-overlay';
+import {
+  MeetingAvailabilityDrawer,
+  MeetingSchedulerDrawer,
+} from './meeting-scheduler-drawer';
+import { DealTeamManager } from './deal-team-manager';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 const SOCKET_BASE_URL = API_BASE_URL.replace(/\/api\/v1$/, '');
@@ -196,6 +208,13 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
   const [viewInlineByFile, setViewInlineByFile] = useState<Record<string, boolean>>({});
   const [uploadingFileId, setUploadingFileId] = useState<string | null>(null);
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
+  const [callState, setCallState] = useState<CallState>({ phase: 'idle' });
+  const [iceServers, setIceServers] = useState<ICEServer[]>([]);
+  const [meetingSchedulerOpen, setMeetingSchedulerOpen] = useState(false);
+  const [meetingRequests, setMeetingRequests] = useState<MeetingRequest[]>([]);
+  const [respondingRequest, setRespondingRequest] = useState<MeetingRequest | null>(null);
+  const [meetingLoading, setMeetingLoading] = useState(false);
+  const [callLogId, setCallLogId] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -226,7 +245,7 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
     [currentParticipant?.pseudonym, participantByUserId, typingUsers],
   );
 
-  const refreshRoom = useEffectEvent(async () => {
+  async function refreshRoom() {
     if (!token) return;
 
     setLoading(true);
@@ -240,7 +259,7 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
     setError(null);
     setRoom(response.data);
     setLoading(false);
-  });
+  }
 
   useEffect(() => {
     if (!token) {
@@ -249,9 +268,77 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
     }
 
     void refreshRoom();
-  }, [dealRoomId, refreshRoom, token]);
+    void api.getICEServers().then((res) => {
+      if (res.success && res.data) setIceServers(res.data);
+    });
+    void api.getDealRoomMeetings(dealRoomId).then((res) => {
+      if (res.success && res.data) setMeetingRequests(res.data);
+    });
+  }, [api, dealRoomId, token]);
 
-  const hydrateDecryptedData = useEffectEvent(async () => {
+  async function startCall(callType: 'audio' | 'video') {
+    if (!room || !user) return;
+    const counterparties = getCounterpartyParticipants(room, user.id);
+    if (counterparties.length === 0) return;
+    const target = counterparties[0];
+    if (!target) return;
+
+    const allParticipantIds = room.participants.map((p) => p.userId);
+    const res = await api.startCall(room.id, callType, allParticipantIds);
+    if (res.success && res.data) setCallLogId(res.data.id);
+
+    setCallState({
+      phase: 'outgoing',
+      callType,
+      dealRoomId: room.id,
+      toUserId: target.userId,
+      toPseudonym: target.pseudonym,
+      callLogId: res.data?.id,
+    });
+
+    socketRef.current?.emit('call:initiate', {
+      dealRoomId: room.id,
+      callType,
+      toUserId: target.userId,
+    });
+  }
+
+  async function scheduleMeeting(
+    meetingType: MeetingType,
+    durationMinutes: number,
+    timezone: string,
+    slots: string[],
+  ) {
+    if (!room) return;
+    setMeetingLoading(true);
+    try {
+      const reqRes = await api.createMeetingRequest(room.id, { meetingType, durationMinutes, timezone });
+      if (!reqRes.success || !reqRes.data) return;
+      const availRes = await api.submitMeetingAvailability(reqRes.data.id, { slots });
+      if (availRes.success) {
+        setMeetingRequests((prev) => [reqRes.data!, ...prev]);
+        setMeetingSchedulerOpen(false);
+      }
+    } finally {
+      setMeetingLoading(false);
+    }
+  }
+
+  async function submitAvailability(slots: string[]) {
+    if (!respondingRequest) return;
+    setMeetingLoading(true);
+    try {
+      await api.submitMeetingAvailability(respondingRequest.id, { slots });
+      setRespondingRequest(null);
+      void api.getDealRoomMeetings(dealRoomId).then((res) => {
+        if (res.success && res.data) setMeetingRequests(res.data);
+      });
+    } finally {
+      setMeetingLoading(false);
+    }
+  }
+
+  async function hydrateDecryptedData() {
     if (!room || !user?.id || !privateKey) {
       startTransition(() => {
         setMessageBodies({});
@@ -324,13 +411,13 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
       setFileNames(nextFileNames);
       setOfferBodies(nextOfferBodies);
     });
-  });
+  }
 
   useEffect(() => {
     void hydrateDecryptedData();
-  }, [hydrateDecryptedData, privateKey, room, user?.id, participantByUserId]);
+  }, [participantByUserId, privateKey, room, user?.id]);
 
-  const handleNewMessage = useEffectEvent((message: DealRoomMessage) => {
+  function handleNewMessage(message: DealRoomMessage) {
     setRoom((current) =>
       current
         ? {
@@ -340,9 +427,9 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
           }
         : current,
     );
-  });
+  }
 
-  const handleReadReceipt = useEffectEvent((payload: { messageId: string; userId: string; readAt: string }) => {
+  function handleReadReceipt(payload: { messageId: string; userId: string; readAt: string }) {
     setRoom((current) =>
       current
         ? {
@@ -361,34 +448,37 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
           }
         : current,
     );
-  });
+  }
 
-  const handlePresenceUpdate = useEffectEvent(
-    (payload: { participants: Array<{ id: string; pseudonym: string; online: boolean }> }) => {
-      setRoom((current) =>
-        current
-          ? {
-              ...current,
-              participants: current.participants.map((participant) => ({
-                ...participant,
-                online:
-                  payload.participants.find((entry) => entry.id === participant.userId)?.online ??
-                  participant.online,
-              })),
-            }
-          : current,
-      );
-    },
-  );
+  function handlePresenceUpdate(payload: {
+    participants: Array<{ id: string; pseudonym: string; online: boolean }>;
+  }) {
+    setRoom((current) =>
+      current
+        ? {
+            ...current,
+            participants: current.participants.map((participant) => ({
+              ...participant,
+              online:
+                payload.participants.find((entry) => entry.id === participant.userId)?.online ??
+                participant.online,
+            })),
+          }
+        : current,
+    );
+  }
 
-  const handleTypingUpdate = useEffectEvent((payload: { userId: string; isTyping: boolean }) => {
+  function handleTypingUpdate(payload: { userId: string; isTyping: boolean }) {
     setTypingUsers((current) => ({
       ...current,
       [payload.userId]: payload.isTyping,
     }));
-  });
+  }
 
-  const handleStageChange = useEffectEvent((payload: { newStatus: DealRoomDetail['status']; systemMessage: string }) => {
+  function handleStageChange(payload: {
+    newStatus: DealRoomDetail['status'];
+    systemMessage: string;
+  }) {
     setRoom((current) =>
       current
         ? {
@@ -402,7 +492,7 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
         : current,
     );
     setNotice(payload.systemMessage);
-  });
+  }
 
   useEffect(() => {
     if (!token || !room) return;
@@ -422,6 +512,21 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
     socket.on('typing:update', handleTypingUpdate);
     socket.on('room:stage_change', handleStageChange);
 
+    socket.on('call:incoming', (payload: {
+      callType: 'audio' | 'video';
+      dealRoomId: string;
+      fromUserId: string;
+      fromPseudonym: string;
+    }) => {
+      setCallState({
+        phase: 'incoming',
+        callType: payload.callType,
+        dealRoomId: payload.dealRoomId,
+        fromUserId: payload.fromUserId,
+        fromPseudonym: payload.fromPseudonym,
+      });
+    });
+
     const interval = window.setInterval(() => {
       socket.emit('presence:ping');
     }, 30_000);
@@ -431,15 +536,7 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [
-    handleNewMessage,
-    handlePresenceUpdate,
-    handleReadReceipt,
-    handleStageChange,
-    handleTypingUpdate,
-    room,
-    token,
-  ]);
+  }, [room?.id, token]);
 
   useEffect(() => {
     if (!room || !user?.id || !socketRef.current) return;
@@ -577,11 +674,13 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
       return;
     }
 
+    const createdOffer = response.data;
+
     setRoom((current) =>
       current
         ? {
             ...current,
-            offers: [...current.offers, response.data],
+            offers: [...current.offers, createdOffer],
             status: 'offer_submitted',
           }
         : current,
@@ -1267,9 +1366,27 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
                 <Landmark className="mr-2 h-4 w-4" />
                 Make offer
               </Button>
-              <Button variant="outline" onClick={() => setNotice('Viewing request captured for the secure workflow queue.')}>
-                <Eye className="mr-2 h-4 w-4" />
-                Request viewing
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => void startCall('audio')}
+                >
+                  <Phone className="mr-2 h-4 w-4" />
+                  Audio call
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => void startCall('video')}
+                >
+                  <Video className="mr-2 h-4 w-4" />
+                  Video call
+                </Button>
+              </div>
+              <Button variant="outline" onClick={() => setMeetingSchedulerOpen(true)}>
+                <Calendar className="mr-2 h-4 w-4" />
+                Schedule meeting
               </Button>
               <Button variant="outline" onClick={() => setNotice('Identity reveal request staged for mutual consent.')}>
                 <UnlockKeyhole className="mr-2 h-4 w-4" />
@@ -1278,11 +1395,49 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
             </div>
           </section>
 
+          {meetingRequests.length > 0 && (
+            <section className="cinematic-panel rounded-[2rem] p-6">
+              <p className="text-xs uppercase tracking-[0.28em] text-stone-500">Meetings</p>
+              <div className="mt-4 grid gap-3">
+                {meetingRequests.slice(0, 4).map((req) => (
+                  <div key={req.id} className="rounded-[1.4rem] border border-white/8 bg-white/3 p-4">
+                    <p className="text-sm text-stone-100 capitalize">{req.meetingType.replace(/_/g, ' ')}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-stone-500">
+                      {req.durationMinutes < 60 ? `${req.durationMinutes} min` : `${req.durationMinutes / 60}h`} · {req.status}
+                    </p>
+                    {req.status === 'pending' && req.requestedBy !== user?.id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 w-full"
+                        onClick={() => setRespondingRequest(req)}
+                      >
+                        Submit availability
+                      </Button>
+                    )}
+                    {req.status === 'confirmed' && (
+                      <a
+                        href={api.getMeetingICSUrl(req.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs text-stone-300 hover:border-white/30 hover:text-stone-100 transition-colors"
+                      >
+                        Download ICS
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {notice ? (
             <section className="cinematic-panel rounded-[2rem] border border-amber-300/10 bg-amber-400/8 p-5 text-sm text-amber-50">
               {notice}
             </section>
           ) : null}
+
+          <DealTeamManager dealRoomId={room.id} />
         </aside>
       </div>
 
@@ -1348,6 +1503,39 @@ export function DealRoomClient({ dealRoomId }: { dealRoomId: string }) {
           </div>
         </Modal>
       ) : null}
+
+      <CallOverlay
+        callState={callState}
+        socket={socketRef.current}
+        iceServers={iceServers}
+        myPseudonym={currentParticipant?.pseudonym ?? 'You'}
+        onCallEnd={async () => {
+          if (callLogId) {
+            await api.endCall(callLogId);
+            setCallLogId(null);
+          }
+          setCallState({ phase: 'idle' });
+        }}
+      />
+
+      {meetingSchedulerOpen && (
+        <MeetingSchedulerDrawer
+          dealRoomId={room.id}
+          onSubmit={scheduleMeeting}
+          onClose={() => setMeetingSchedulerOpen(false)}
+          loading={meetingLoading}
+        />
+      )}
+
+      {respondingRequest && (
+        <MeetingAvailabilityDrawer
+          request={respondingRequest}
+          myAvailability={null}
+          onSubmit={submitAvailability}
+          onClose={() => setRespondingRequest(null)}
+          loading={meetingLoading}
+        />
+      )}
 
       {offerModalOpen ? (
         <Modal title="Submit offer" onClose={() => setOfferModalOpen(false)}>

@@ -547,6 +547,355 @@ export const offers = pgTable(
   }),
 );
 
+// ─── Phase 4 Enums ───────────────────────────────────────────────────────────
+
+export const callTypeEnum = pgEnum('call_type', ['audio', 'video']);
+export const callStatusEnum = pgEnum('call_status', ['pending', 'active', 'ended', 'rejected']);
+export const meetingTypeEnum = pgEnum('meeting_type', [
+  'property_discussion',
+  'due_diligence',
+  'offer',
+  'virtual_viewing',
+]);
+export const meetingStatusEnum = pgEnum('meeting_status', [
+  'pending',
+  'confirmed',
+  'cancelled',
+  'completed',
+]);
+export const notificationCategoryEnum = pgEnum('notification_category', [
+  'call',
+  'meeting',
+  'message',
+  'offer',
+  'nda',
+  'deal_stage',
+  'listing',
+  'kyc',
+]);
+
+// ─── Phase 4 Tables ──────────────────────────────────────────────────────────
+
+export const callLogs = pgTable(
+  'call_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'set null' }),
+    participants: jsonb('participants').$type<string[]>().default([]).notNull(),
+    callType: callTypeEnum('call_type').notNull(),
+    status: callStatusEnum('status').default('ended').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    durationSeconds: integer('duration_seconds'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('call_logs_room_idx').on(t.dealRoomId),
+    statusIdx: index('call_logs_status_idx').on(t.status),
+  }),
+);
+
+export const meetingRequests = pgTable(
+  'meeting_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    meetingType: meetingTypeEnum('meeting_type').notNull(),
+    durationMinutes: integer('duration_minutes').notNull(),
+    timezone: varchar('timezone', { length: 100 }).notNull(),
+    status: meetingStatusEnum('status').default('pending').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('meeting_requests_room_idx').on(t.dealRoomId),
+    statusIdx: index('meeting_requests_status_idx').on(t.status),
+  }),
+);
+
+export const meetingAvailability = pgTable(
+  'meeting_availability',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    meetingRequestId: uuid('meeting_request_id')
+      .notNull()
+      .references(() => meetingRequests.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    slots: jsonb('slots').$type<string[]>().notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    requestIdx: index('meeting_availability_request_idx').on(t.meetingRequestId),
+    uniqueSubmission: uniqueIndex('meeting_availability_unique_idx').on(
+      t.meetingRequestId,
+      t.userId,
+    ),
+  }),
+);
+
+export const meetings = pgTable(
+  'meetings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    meetingRequestId: uuid('meeting_request_id')
+      .notNull()
+      .references(() => meetingRequests.id),
+    dealRoomId: uuid('deal_room_id')
+      .notNull()
+      .references(() => dealRooms.id, { onDelete: 'cascade' }),
+    meetingType: meetingTypeEnum('meeting_type').notNull(),
+    scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
+    durationMinutes: integer('duration_minutes').notNull(),
+    timezone: varchar('timezone', { length: 100 }).notNull(),
+    icsUid: varchar('ics_uid', { length: 255 }).notNull(),
+    status: meetingStatusEnum('status').default('confirmed').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index('meetings_room_idx').on(t.dealRoomId),
+    statusIdx: index('meetings_status_idx').on(t.status),
+    requestUnique: uniqueIndex('meetings_request_unique_idx').on(t.meetingRequestId),
+  }),
+);
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    category: notificationCategoryEnum('category').notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+    entityId: varchar('entity_id', { length: 255 }),
+    read: boolean('read').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('notifications_user_idx').on(t.userId),
+    readIdx: index('notifications_read_idx').on(t.read),
+    createdIdx: index('notifications_created_idx').on(t.createdAt),
+  }),
+);
+
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    category: notificationCategoryEnum('category').notNull(),
+    inApp: boolean('in_app').default(true).notNull(),
+    email: boolean('email').default(true).notNull(),
+    push: boolean('push').default(false).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('notification_prefs_user_idx').on(t.userId),
+    uniquePref: uniqueIndex('notification_prefs_unique_idx').on(t.userId, t.category),
+  }),
+);
+
+export const webPushSubscriptions = pgTable(
+  'web_push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: varchar('endpoint', { length: 500 }).notNull(),
+    p256dh: varchar('p256dh', { length: 255 }).notNull(),
+    auth: varchar('auth', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('web_push_subscriptions_user_idx').on(t.userId),
+    uniqueEndpoint: uniqueIndex('web_push_subscriptions_unique_idx').on(t.userId, t.endpoint),
+  }),
+);
+
+// ─── Phase 5 Tables ──────────────────────────────────────────────────────────
+
+export const userMatches = pgTable(
+  'user_matches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    listingId: uuid('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    score: integer('score').notNull(),
+    explanation: text('explanation'),
+    dismissed: boolean('dismissed').default(false).notNull(),
+    expressedInterest: boolean('expressed_interest').default(false).notNull(),
+    saved: boolean('saved').default(false).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('user_matches_user_idx').on(t.userId),
+    listingIdx: index('user_matches_listing_idx').on(t.listingId),
+    uniqueMatch: uniqueIndex('user_matches_unique_idx').on(t.userId, t.listingId),
+    expiresIdx: index('user_matches_expires_idx').on(t.expiresAt),
+  }),
+);
+
+export const supportTickets = pgTable(
+  'support_tickets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    email: varchar('email', { length: 255 }),
+    subject: varchar('subject', { length: 255 }).notNull(),
+    body: text('body').notNull(),
+    resolved: boolean('resolved').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('support_tickets_user_idx').on(t.userId),
+    resolvedIdx: index('support_tickets_resolved_idx').on(t.resolved),
+  }),
+);
+
+export const savedCalculations = pgTable(
+  'saved_calculations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    listingId: uuid('listing_id').references(() => listings.id, { onDelete: 'set null' }),
+    label: varchar('label', { length: 255 }),
+    inputs: jsonb('inputs').$type<Record<string, unknown>>().default({}).notNull(),
+    results: jsonb('results').$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('saved_calculations_user_idx').on(t.userId),
+  }),
+);
+
+// ─── Phase 6: Off-Market Buyer Briefs ────────────────────────────────────────
+
+export const buyerBriefs = pgTable(
+  'buyer_briefs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    assetTypes: jsonb('asset_types').$type<string[]>().default([]).notNull(),
+    cities: jsonb('cities').$type<string[]>().default([]).notNull(),
+    minPrice: decimal('min_price', { precision: 18, scale: 2 }),
+    maxPrice: decimal('max_price', { precision: 18, scale: 2 }),
+    currency: varchar('currency', { length: 10 }).default('AED').notNull(),
+    minSizeSqm: integer('min_size_sqm'),
+    maxSizeSqm: integer('max_size_sqm'),
+    minBedrooms: integer('min_bedrooms'),
+    maxBedrooms: integer('max_bedrooms'),
+    description: text('description'),
+    embedding: vector('embedding', 1536),
+    status: varchar('status', { length: 50 }).default('active').notNull(),
+    matchedListingIds: jsonb('matched_listing_ids').$type<string[]>().default([]).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('buyer_briefs_user_idx').on(t.userId),
+    statusIdx: index('buyer_briefs_status_idx').on(t.status),
+  }),
+);
+
+// ─── Phase 6: Portfolio Tracker ───────────────────────────────────────────────
+
+export const portfolioEntries = pgTable(
+  'portfolio_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    listingId: uuid('listing_id').references(() => listings.id, { onDelete: 'set null' }),
+    listingSnapshot: jsonb('listing_snapshot').$type<Record<string, unknown>>().default({}).notNull(),
+    stage: varchar('stage', { length: 50 }).default('saved').notNull(),
+    customLabel: varchar('custom_label', { length: 255 }),
+    aiInsight: text('ai_insight'),
+    lastAiInsightAt: timestamp('last_ai_insight_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('portfolio_entries_user_idx').on(t.userId),
+    stageIdx: index('portfolio_entries_stage_idx').on(t.stage),
+    uniqueEntry: uniqueIndex('portfolio_entries_unique_idx').on(t.userId, t.listingId),
+  }),
+);
+
+export const portfolioNotes = pgTable(
+  'portfolio_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entryId: uuid('entry_id').notNull().references(() => portfolioEntries.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    encryptedNote: jsonb('encrypted_note').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    entryIdx: index('portfolio_notes_entry_idx').on(t.entryId),
+  }),
+);
+
+// ─── Phase 6: Multi-Role Deal Teams ───────────────────────────────────────────
+
+export const dealTeamMembers = pgTable(
+  'deal_team_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealRoomId: uuid('deal_room_id').notNull().references(() => dealRooms.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    role: varchar('role', { length: 50 }).default('observer').notNull(),
+    pseudonym: varchar('pseudonym', { length: 100 }),
+    invitedBy: uuid('invited_by').references(() => users.id),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    dealRoomIdx: index('deal_team_members_deal_room_idx').on(t.dealRoomId),
+    uniqueMember: uniqueIndex('deal_team_members_unique_idx').on(t.dealRoomId, t.userId),
+  }),
+);
+
+// ─── Phase 6: Translation Cache ───────────────────────────────────────────────
+
+export const translationCache = pgTable(
+  'translation_cache',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    targetLanguage: varchar('target_language', { length: 10 }).notNull(),
+    translatedText: text('translated_text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniqueTranslation: uniqueIndex('translation_cache_unique_idx').on(t.contentHash, t.targetLanguage),
+    expiresIdx: index('translation_cache_expires_idx').on(t.expiresAt),
+  }),
+);
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({

@@ -6,6 +6,8 @@ import type { AssetType, EncryptedBlob, Listing } from '@vault/types';
 import { AssetTypeEnum } from '@vault/types';
 import { Badge, Button, Input, Label } from '@vault/ui';
 import { useAuth } from './providers/auth-provider';
+import { AIPriceRecommendation } from './ai-price-recommendation';
+import { AIListingDescription } from './ai-listing-description';
 
 async function fileToEncryptedBlob(file: File): Promise<EncryptedBlob> {
   const keyBytes = crypto.getRandomValues(new Uint8Array(32));
@@ -191,10 +193,36 @@ export function SellerListingEditor() {
               <Field label="Bedrooms" name="bedrooms" type="number" />
               <Field label="Bathrooms" name="bathrooms" type="number" />
             </div>
+            {/* Phase 5: AI price recommendation — shown after listing is created */}
+            {created && token && (
+              <div className="mt-4">
+                <AIPriceRecommendation
+                  listingId={created.id}
+                  token={token}
+                  currentPrice={created.priceAmount ? Number(created.priceAmount) : undefined}
+                  currency={created.priceCurrency}
+                />
+              </div>
+            )}
             <div className="mt-4 grid gap-4">
               <Field label="Description" name="description" as="textarea" />
               <Field label="Arabic description" name="descriptionAr" as="textarea" />
             </div>
+            {/* Phase 5: AI Listing Description generator */}
+            {created && token && (
+              <div className="mt-4 rounded-[1.5rem] border border-stone-700 bg-stone-900/40 p-5">
+                <h3 className="text-base font-semibold text-stone-100 mb-3">
+                  ✦ Generate description with AI
+                </h3>
+                <AIListingDescription
+                  listingId={created.id}
+                  token={token}
+                  onSave={() => {
+                    setStatus('Description updated. Save the listing to apply changes.');
+                  }}
+                />
+              </div>
+            )}
             <div className="mt-6">
               <Button type="submit" variant="gold" disabled={!verifiedDocs}>Save draft</Button>
             </div>

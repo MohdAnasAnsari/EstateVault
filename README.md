@@ -1,6 +1,6 @@
-# VAULT Phase 1
+# VAULT
 
-VAULT is a privacy-first trophy real estate platform built as a pnpm monorepo. Phase 1 includes the foundation: Fastify API, Next.js web app, Drizzle schema, mocks-first AI/service integrations, seed data, encryption helpers, and daily listing liveness jobs.
+VAULT is a privacy-first trophy real estate platform built as a pnpm monorepo. The platform covers the full Phase 1–3 stack: Fastify API, Next.js web app, Drizzle schema, mocks-first AI/service integrations, seed data, encryption helpers, daily listing liveness jobs, KYC wizard with AML/RERA compliance, AI quality scoring, fraud detection, and encrypted deal rooms with NDA signing and offers.
 
 ## Prerequisites
 
@@ -69,4 +69,4 @@ Web UI -> API Client -> Fastify API -> Drizzle/Postgres
 
 - `MOCK_SERVICES=true` is the default and keeps development fully offline from third-party providers.
 - Listing prices and off-market visibility intentionally change based on access tier.
-- KYC submission, OTP, exchange rates, RERA validation, AI responses, and document analysis are all mock-backed in Phase 1.
+- KYC submission, OTP, exchange rates, RERA validation, AI responses, and document analysis are all mock-backed by default.
