@@ -1,0 +1,179 @@
+# EstateVault VAULT Platform — Listing Service (port 3002)
+# Manages property listings, off-market board, portfolio tracker, and
+# Meilisearch index synchronisation (Phase 6).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: listing-service
+  namespace: vault-prod
+  labels:
+    app: listing-service
+    app.kubernetes.io/part-of: vault
+spec:
+  type: ClusterIP
+  selector:
+    app: listing-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: listing-service
+  namespace: vault-prod
+  labels:
+    app: listing-service
+    app.kubernetes.io/part-of: vault
+    app.kubernetes.io/component: listings
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: listing-service
+  template:
+    metadata:
+      labels:
+        app: listing-service
+        app.kubernetes.io/part-of: vault
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/api/metrics"
+        prometheus.io/port: "3002"
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: listing-service
+      containers:
+        - name: listing-service
+          image: ghcr.io/mohdanasansari/vault-listing-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3002
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: NODE_ENV
+            - name: MOCK_SERVICES
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: MOCK_SERVICES
+            - name: MEILISEARCH_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: MEILISEARCH_HOST
+            - name: R2_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: R2_BUCKET
+            - name: R2_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: R2_PUBLIC_URL
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: NEXTAUTH_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: REDIS_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: OPENAI_API_KEY
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENTRY_DSN
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENDGRID_API_KEY
+            - name: R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_ACCESS_KEY_ID
+            - name: R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: listing-service-hpa
+  namespace: vault-prod
+  labels:
+    app: listing-service
+    app.kubernetes.io/part-of: vault
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: listing-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300

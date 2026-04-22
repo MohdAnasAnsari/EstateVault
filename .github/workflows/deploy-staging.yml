@@ -1,0 +1,188 @@
+# EstateVault VAULT Platform — Deploy to Staging
+# Triggered automatically on every push to main (after CI passes).
+# Each commit to main is deployed to vault-staging with a unique image tag
+# (staging-<sha>) so rollbacks are trivial: just re-run with an old SHA.
+#
+# Required secrets:
+#   GHCR_TOKEN         — GitHub PAT with packages:write scope
+#   KUBECONFIG_STAGING — base64-encoded kubeconfig for the staging cluster
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/mohdanasansari/vault
+  NAMESPACE: vault-staging
+
+# Cancel in-progress staging deployments when a newer commit is pushed.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            context: apps/services/api-gateway
+          - service: identity-service
+            context: apps/services/identity-service
+          - service: listing-service
+            context: apps/services/listing-service
+          - service: messaging-service
+            context: apps/services/messaging-service
+          - service: media-service
+            context: apps/services/media-service
+          - service: call-service
+            context: apps/services/call-service
+          - service: ai-service
+            context: apps/services/ai-service
+          - service: notification-service
+            context: apps/services/notification-service
+          - service: analytics-service
+            context: apps/services/analytics-service
+    outputs:
+      # Expose the image tag so the deploy job can reference it
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: vars
+        run: echo "image_tag=staging-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ steps.vars.outputs.image_tag }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:staging-latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            NODE_VERSION=22
+            BUILD_SHA=${{ github.sha }}
+
+  deploy:
+    name: Deploy to vault-staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info --request-timeout=10s
+
+      - name: Update deployment images
+        env:
+          TAG: staging-${{ github.sha }}
+        run: |
+          SERVICES=(
+            api-gateway
+            identity-service
+            listing-service
+            messaging-service
+            media-service
+            call-service
+            ai-service
+            notification-service
+            analytics-service
+          )
+          for svc in "${SERVICES[@]}"; do
+            echo "→ Updating $svc to $TAG"
+            kubectl set image deployment/"$svc" \
+              "$svc=${{ env.IMAGE_PREFIX }}-$svc:$TAG" \
+              --namespace "${{ env.NAMESPACE }}"
+          done
+
+      - name: Wait for rollouts
+        run: |
+          SERVICES=(
+            api-gateway
+            identity-service
+            listing-service
+            messaging-service
+            media-service
+            call-service
+            ai-service
+            notification-service
+            analytics-service
+          )
+          FAILED=()
+          for svc in "${SERVICES[@]}"; do
+            echo "→ Waiting for $svc rollout..."
+            if ! kubectl rollout status deployment/"$svc" \
+                --namespace "${{ env.NAMESPACE }}" \
+                --timeout=3m; then
+              echo "::error::Rollout failed for $svc"
+              FAILED+=("$svc")
+            fi
+          done
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "::error::Failed deployments: ${FAILED[*]}"
+            exit 1
+          fi
+          echo "All rollouts succeeded."
+
+      - name: Write job summary (success)
+        if: success()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Staging Deploy Success
+
+          | Field | Value |
+          |-------|-------|
+          | Commit | \`${{ github.sha }}\` |
+          | Image tag | \`staging-${{ github.sha }}\` |
+          | Namespace | \`${{ env.NAMESPACE }}\` |
+          | Triggered by | @${{ github.actor }} |
+          | Time | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          EOF
+
+      - name: Write job summary (failure)
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Staging Deploy FAILED
+
+          | Field | Value |
+          |-------|-------|
+          | Commit | \`${{ github.sha }}\` |
+          | Namespace | \`${{ env.NAMESPACE }}\` |
+          | Triggered by | @${{ github.actor }} |
+
+          Check the rollout logs above for details.
+          Run \`kubectl rollout undo deployment/<name> -n ${{ env.NAMESPACE }}\` to revert a specific service.
+          EOF

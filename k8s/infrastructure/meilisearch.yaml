@@ -1,0 +1,115 @@
+# EstateVault VAULT Platform — Meilisearch
+# Full-text search engine for property listings (listing-service).
+# Uses a PVC for index persistence so re-indexing is not required on pod restarts.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meilisearch-data
+  namespace: vault-prod
+  labels:
+    app: meilisearch
+    app.kubernetes.io/part-of: vault
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: standard      # override with your cloud CSI class
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meilisearch
+  namespace: vault-prod
+  labels:
+    app: meilisearch
+    app.kubernetes.io/part-of: vault
+spec:
+  type: ClusterIP
+  selector:
+    app: meilisearch
+  ports:
+    - name: http
+      port: 7700
+      targetPort: 7700
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meilisearch
+  namespace: vault-prod
+  labels:
+    app: meilisearch
+    app.kubernetes.io/part-of: vault
+    app.kubernetes.io/component: search
+spec:
+  replicas: 1
+  # Recreate strategy because Meilisearch does NOT support concurrent writers on a single data dir.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: meilisearch
+  template:
+    metadata:
+      labels:
+        app: meilisearch
+        app.kubernetes.io/part-of: vault
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: meilisearch
+          image: getmeili/meilisearch:v1.7
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 7700
+          env:
+            - name: MEILI_ENV
+              value: production
+            - name: MEILI_DB_PATH
+              value: /meili_data
+            - name: MEILI_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: MEILISEARCH_MASTER_KEY
+            - name: MEILI_NO_ANALYTICS
+              value: "true"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 7700
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7700
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: meilisearch-data
+              mountPath: /meili_data
+      volumes:
+        - name: meilisearch-data
+          persistentVolumeClaim:
+            claimName: meilisearch-data

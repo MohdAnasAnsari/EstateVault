@@ -1,6 +1,22 @@
 version: '3.9'
 
+# ─── EstateVault – local development compose ──────────────────────────────────
+# Infrastructure + all 9 microservices.
+# Use docker-compose.override.yml for hot-reload source mounts (applied automatically).
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  env_file: .env
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
+
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: vault_postgres
@@ -50,7 +66,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Phase 7: PgBouncer connection pooler
   pgbouncer:
     image: bitnami/pgbouncer:latest
     container_name: vault_pgbouncer
@@ -77,6 +92,181 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  # ─── Microservices ───────────────────────────────────────────────────────────
+
+  api-gateway:
+    <<: *service-defaults
+    container_name: vault_api_gateway
+    build:
+      context: ./apps/services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      PORT: '3000'
+    volumes:
+      - ./apps/services/api-gateway/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  identity-service:
+    <<: *service-defaults
+    container_name: vault_identity_service
+    build:
+      context: ./apps/services/identity-service
+      dockerfile: Dockerfile
+    ports:
+      - '3001:3001'
+    environment:
+      PORT: '3001'
+    volumes:
+      - ./apps/services/identity-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  listing-service:
+    <<: *service-defaults
+    container_name: vault_listing_service
+    build:
+      context: ./apps/services/listing-service
+      dockerfile: Dockerfile
+    ports:
+      - '3002:3002'
+    environment:
+      PORT: '3002'
+    volumes:
+      - ./apps/services/listing-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3002/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  messaging-service:
+    <<: *service-defaults
+    container_name: vault_messaging_service
+    build:
+      context: ./apps/services/messaging-service
+      dockerfile: Dockerfile
+    ports:
+      - '3003:3003'
+    environment:
+      PORT: '3003'
+    volumes:
+      - ./apps/services/messaging-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3003/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  media-service:
+    <<: *service-defaults
+    container_name: vault_media_service
+    build:
+      context: ./apps/services/media-service
+      dockerfile: Dockerfile
+    ports:
+      - '3004:3004'
+    environment:
+      PORT: '3004'
+    volumes:
+      - ./apps/services/media-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3004/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  call-service:
+    <<: *service-defaults
+    container_name: vault_call_service
+    build:
+      context: ./apps/services/call-service
+      dockerfile: Dockerfile
+    ports:
+      - '3005:3005'
+    environment:
+      PORT: '3005'
+    volumes:
+      - ./apps/services/call-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3005/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  ai-service:
+    <<: *service-defaults
+    container_name: vault_ai_service
+    build:
+      context: ./apps/services/ai-service
+      dockerfile: Dockerfile
+    ports:
+      - '3006:3006'
+    environment:
+      PORT: '3006'
+    volumes:
+      - ./apps/services/ai-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3006/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  notification-service:
+    <<: *service-defaults
+    container_name: vault_notification_service
+    build:
+      context: ./apps/services/notification-service
+      dockerfile: Dockerfile
+    ports:
+      - '3007:3007'
+    environment:
+      PORT: '3007'
+    volumes:
+      - ./apps/services/notification-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3007/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  analytics-service:
+    <<: *service-defaults
+    container_name: vault_analytics_service
+    build:
+      context: ./apps/services/analytics-service
+      dockerfile: Dockerfile
+    ports:
+      - '3008:3008'
+    environment:
+      PORT: '3008'
+    volumes:
+      - ./apps/services/analytics-service/src:/app/src
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3008/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# ─── Named volumes ────────────────────────────────────────────────────────────
 
 volumes:
   postgres_data:

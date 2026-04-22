@@ -1,0 +1,75 @@
+# docker-compose.override.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Development overrides – applied automatically when running `docker compose up`.
+# Enables hot-reload via nodemon / ts-node source mounts for all 9 services
+# and sets NODE_ENV=development everywhere.
+#
+# Do NOT commit secrets here. Use a local .env file for credentials.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  api-gateway:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/api-gateway/src:/app/src:delegated
+
+  identity-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/identity-service/src:/app/src:delegated
+
+  listing-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/listing-service/src:/app/src:delegated
+
+  messaging-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/messaging-service/src:/app/src:delegated
+
+  media-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/media-service/src:/app/src:delegated
+
+  call-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/call-service/src:/app/src:delegated
+
+  ai-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/ai-service/src:/app/src:delegated
+
+  notification-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/notification-service/src:/app/src:delegated
+
+  analytics-service:
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/services/analytics-service/src:/app/src:delegated

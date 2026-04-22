@@ -1,0 +1,165 @@
+# EstateVault VAULT Platform — Call Service (port 3005)
+# WebRTC signalling server for property video tours and deal-team calls.
+# The Ingress exposes /call-signal/* with extended proxy timeouts to keep
+# long-lived WebSocket connections alive.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: call-service
+  namespace: vault-prod
+  labels:
+    app: call-service
+    app.kubernetes.io/part-of: vault
+spec:
+  type: ClusterIP
+  selector:
+    app: call-service
+  ports:
+    - name: http
+      port: 3005
+      targetPort: 3005
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-service
+  namespace: vault-prod
+  labels:
+    app: call-service
+    app.kubernetes.io/part-of: vault
+    app.kubernetes.io/component: calling
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: call-service
+  template:
+    metadata:
+      labels:
+        app: call-service
+        app.kubernetes.io/part-of: vault
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/api/metrics"
+        prometheus.io/port: "3005"
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: call-service
+      containers:
+        - name: call-service
+          image: ghcr.io/mohdanasansari/vault-call-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3005
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: NODE_ENV
+            - name: MOCK_SERVICES
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: MOCK_SERVICES
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: NEXTAUTH_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: REDIS_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: OPENAI_API_KEY
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENTRY_DSN
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENDGRID_API_KEY
+            - name: R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_ACCESS_KEY_ID
+            - name: R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3005
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3005
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: call-service-hpa
+  namespace: vault-prod
+  labels:
+    app: call-service
+    app.kubernetes.io/part-of: vault
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: call-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300

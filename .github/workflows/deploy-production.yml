@@ -1,0 +1,277 @@
+# EstateVault VAULT Platform — Deploy to Production
+# Triggered by:
+#   1. A semver tag push (e.g. v1.2.3) — automated release pipeline
+#   2. workflow_dispatch (manual) — for hotfixes or forced re-deploys
+#
+# The image tag IS the git tag (e.g. v1.2.3), providing an immutable
+# audit trail: any production image can be traced back to a specific release.
+#
+# Required secrets:
+#   GHCR_TOKEN        — GitHub PAT with packages:write scope
+#   KUBECONFIG_PROD   — base64-encoded kubeconfig for the production cluster
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - "v*.*.*"          # matches v1.0.0, v2.1.3-rc1, etc.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (e.g. v1.2.3 or staging-<sha>)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/mohdanasansari/vault
+  NAMESPACE: vault-prod
+
+# Prevent concurrent production deploys — second one waits, not cancelled.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    # Skip the build step on manual dispatch if the operator supplied a pre-built tag
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            context: apps/services/api-gateway
+          - service: identity-service
+            context: apps/services/identity-service
+          - service: listing-service
+            context: apps/services/listing-service
+          - service: messaging-service
+            context: apps/services/messaging-service
+          - service: media-service
+            context: apps/services/media-service
+          - service: call-service
+            context: apps/services/call-service
+          - service: ai-service
+            context: apps/services/ai-service
+          - service: notification-service
+            context: apps/services/notification-service
+          - service: analytics-service
+            context: apps/services/analytics-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          # Tag with the git ref name (the semver tag, e.g. v1.2.3)
+          # AND latest so health checks from the ingress can always pull latest.
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.ref_name }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            NODE_VERSION=22
+            BUILD_SHA=${{ github.sha }}
+            BUILD_VERSION=${{ github.ref_name }}
+
+  deploy:
+    name: Deploy to vault-prod
+    runs-on: ubuntu-latest
+    # Run after build-and-push (tag push) OR immediately (manual dispatch with pre-built tag)
+    needs: [build-and-push]
+    if: always() && (needs.build-and-push.result == 'success' || github.event_name == 'workflow_dispatch')
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info --request-timeout=10s
+
+      - name: Update deployment images
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          SERVICES=(
+            api-gateway
+            identity-service
+            listing-service
+            messaging-service
+            media-service
+            call-service
+            ai-service
+            notification-service
+            analytics-service
+          )
+          for svc in "${SERVICES[@]}"; do
+            echo "→ Updating $svc to $TAG"
+            kubectl set image deployment/"$svc" \
+              "$svc=${{ env.IMAGE_PREFIX }}-$svc:$TAG" \
+              --namespace "${{ env.NAMESPACE }}"
+          done
+
+      - name: Wait for rollouts (5 min timeout)
+        run: |
+          SERVICES=(
+            api-gateway
+            identity-service
+            listing-service
+            messaging-service
+            media-service
+            call-service
+            ai-service
+            notification-service
+            analytics-service
+          )
+          FAILED=()
+          for svc in "${SERVICES[@]}"; do
+            echo "→ Waiting for $svc rollout..."
+            if ! kubectl rollout status deployment/"$svc" \
+                --namespace "${{ env.NAMESPACE }}" \
+                --timeout=5m; then
+              echo "::error::Rollout failed for $svc"
+              FAILED+=("$svc")
+            fi
+          done
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "::error::Failed deployments: ${FAILED[*]}"
+            exit 1
+          fi
+          echo "All rollouts succeeded."
+
+      # ── Smoke tests ──────────────────────────────────────────────────────────
+      # Use kubectl port-forward to reach each service inside the cluster and
+      # verify the /health endpoint returns HTTP 200.  A local port is assigned
+      # per service to avoid collisions.  The forward runs in the background and
+      # is torn down via a trap to ensure clean-up on failure.
+      - name: Smoke test — health checks via port-forward
+        timeout-minutes: 5
+        run: |
+          declare -A SERVICE_PORTS=(
+            [api-gateway]=3000
+            [identity-service]=3001
+            [listing-service]=3002
+            [messaging-service]=3003
+            [media-service]=3004
+            [call-service]=3005
+            [ai-service]=3006
+            [notification-service]=3007
+            [analytics-service]=3008
+          )
+          FAILED=()
+          LOCAL_BASE=18000   # local port base; avoids conflicts with the actual service ports
+
+          for svc in "${!SERVICE_PORTS[@]}"; do
+            REMOTE_PORT="${SERVICE_PORTS[$svc]}"
+            LOCAL_PORT="$LOCAL_BASE"
+            LOCAL_BASE=$((LOCAL_BASE + 1))
+
+            echo "→ Smoke-testing $svc on local port $LOCAL_PORT"
+
+            # Start port-forward in background
+            kubectl port-forward "service/$svc" "$LOCAL_PORT:$REMOTE_PORT" \
+              --namespace "${{ env.NAMESPACE }}" &
+            PF_PID=$!
+            # Give the tunnel a moment to establish
+            sleep 3
+
+            # Hit /health; allow up to 5 retries over 10 seconds
+            HTTP_STATUS=0
+            for i in $(seq 1 5); do
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                --max-time 5 "http://localhost:$LOCAL_PORT/health" 2>/dev/null || echo 0)
+              [ "$HTTP_STATUS" = "200" ] && break
+              sleep 2
+            done
+
+            kill "$PF_PID" 2>/dev/null || true
+            wait "$PF_PID" 2>/dev/null || true
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "  $svc /health → 200 OK"
+            else
+              echo "::error::$svc /health returned $HTTP_STATUS (expected 200)"
+              FAILED+=("$svc")
+            fi
+          done
+
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "::error::Smoke tests failed for: ${FAILED[*]}"
+            exit 1
+          fi
+          echo "All smoke tests passed."
+
+      - name: Write job summary (success)
+        if: success()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Production Deploy Success
+
+          | Field | Value |
+          |-------|-------|
+          | Version | \`${{ steps.tag.outputs.tag }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Namespace | \`${{ env.NAMESPACE }}\` |
+          | Triggered by | @${{ github.actor }} |
+          | Time | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+
+          All 9 services are running and passing health checks.
+          EOF
+
+      - name: Write job summary (failure)
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Production Deploy FAILED
+
+          | Field | Value |
+          |-------|-------|
+          | Version attempted | \`${{ steps.tag.outputs.tag }}\` |
+          | Namespace | \`${{ env.NAMESPACE }}\` |
+          | Triggered by | @${{ github.actor }} |
+
+          ### Rollback instructions
+          \`\`\`bash
+          # Rollback all services to the previous revision
+          for svc in api-gateway identity-service listing-service messaging-service \\
+                     media-service call-service ai-service notification-service analytics-service; do
+            kubectl rollout undo deployment/\$svc -n ${{ env.NAMESPACE }}
+          done
+          \`\`\`
+          EOF

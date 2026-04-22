@@ -1,0 +1,35 @@
+{
+  "name": "@vault/ai-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vault/types": "workspace:*",
+    "@vault/db": "workspace:*",
+    "@vault/cache": "workspace:*",
+    "@vault/ai": "workspace:*",
+    "@vault/mocks": "workspace:*",
+    "@vault/logger": "workspace:*",
+    "fastify": "^5.2.1",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/rate-limit": "^10.1.1",
+    "@fastify/cookie": "^11.0.1",
+    "bullmq": "^5.34.1",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1",
+    "@sentry/node": "^8.48.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2",
+    "@types/node": "^22.10.2"
+  }
+}

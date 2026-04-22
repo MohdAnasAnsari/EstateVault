@@ -1,0 +1,167 @@
+# EstateVault VAULT Platform — AI Service (port 3006)
+# Embedding generation (pgvector), property valuation predictions,
+# and OpenAI-powered listing descriptions.
+# Higher resource limits than other services: embedding inference is CPU-bound
+# and can spike during batch re-indexing jobs.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: vault-prod
+  labels:
+    app: ai-service
+    app.kubernetes.io/part-of: vault
+spec:
+  type: ClusterIP
+  selector:
+    app: ai-service
+  ports:
+    - name: http
+      port: 3006
+      targetPort: 3006
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: vault-prod
+  labels:
+    app: ai-service
+    app.kubernetes.io/part-of: vault
+    app.kubernetes.io/component: ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+        app.kubernetes.io/part-of: vault
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/api/metrics"
+        prometheus.io/port: "3006"
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ai-service
+      containers:
+        - name: ai-service
+          image: ghcr.io/mohdanasansari/vault-ai-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3006
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: NODE_ENV
+            - name: MOCK_SERVICES
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-config
+                  key: MOCK_SERVICES
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: NEXTAUTH_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: REDIS_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: OPENAI_API_KEY
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENTRY_DSN
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: SENDGRID_API_KEY
+            - name: R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_ACCESS_KEY_ID
+            - name: R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secrets
+                  key: R2_SECRET_ACCESS_KEY
+          resources:
+            # ai-service gets elevated limits for embedding inference workloads
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 1Gi
+              cpu: 1000m
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-service-hpa
+  namespace: vault-prod
+  labels:
+    app: ai-service
+    app.kubernetes.io/part-of: vault
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
