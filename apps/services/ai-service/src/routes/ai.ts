@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb } from '@vault/db';
 import { aiService } from '@vault/ai';
 import { createLogger } from '@vault/logger';
+import type { Listing } from '@vault/types';
 import { eq } from 'drizzle-orm';
 
 const logger = createLogger('ai-service:routes:ai');
@@ -15,6 +16,104 @@ function ok(data: unknown) {
 
 function fail(code: string, message: string, status = 400) {
   return { success: false as const, error: { code, message }, _status: status };
+}
+
+type DbListingForAi = {
+  id: string;
+  sellerId: string;
+  agentId: string | null;
+  title: string;
+  slug: string;
+  assetType: Listing['assetType'];
+  status: Listing['status'];
+  visibility: Listing['visibility'];
+  priceAmount: string | null;
+  priceCurrency: string;
+  priceOnRequest: boolean;
+  country: string;
+  city: string;
+  district: string | null;
+  coordinatesLat: string | null;
+  coordinatesLng: string | null;
+  sizeSqm: string | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  floors: number | null;
+  yearBuilt: number | null;
+  description: string | null;
+  descriptionAr: string | null;
+  keyFeatures: unknown;
+  commercialData: unknown;
+  sellerMotivation: Listing['sellerMotivation'];
+  offPlan: boolean;
+  titleDeedVerified: boolean;
+  titleDeedNumber: string | null;
+  verificationStatus: Listing['verificationStatus'];
+  sellerVerificationFeedback?: string | null;
+  titleDeedDocument?: unknown;
+  nocDocument?: unknown;
+  encumbranceDocument?: unknown;
+  listingQualityScore: number;
+  qualityTier: Listing['qualityTier'];
+  qualityTierOverride?: Listing['qualityTier'] | null;
+  lastSellerConfirmation: Date;
+  viewCount: number;
+  interestCount: number;
+  daysOnMarket: number;
+  aiFraudFlag: boolean;
+  meilisearchIndexedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function toAiListing(listing: DbListingForAi): Listing {
+  return {
+    id: listing.id,
+    sellerId: listing.sellerId,
+    agentId: listing.agentId ?? null,
+    title: listing.title,
+    slug: listing.slug,
+    assetType: listing.assetType,
+    status: listing.status,
+    visibility: listing.visibility,
+    priceAmount: listing.priceAmount ?? null,
+    priceCurrency: listing.priceCurrency,
+    priceOnRequest: listing.priceOnRequest,
+    country: listing.country,
+    city: listing.city,
+    district: listing.district ?? null,
+    coordinatesLat: listing.coordinatesLat ?? null,
+    coordinatesLng: listing.coordinatesLng ?? null,
+    sizeSqm: listing.sizeSqm ?? null,
+    bedrooms: listing.bedrooms ?? null,
+    bathrooms: listing.bathrooms ?? null,
+    floors: listing.floors ?? null,
+    yearBuilt: listing.yearBuilt ?? null,
+    description: listing.description ?? null,
+    descriptionAr: listing.descriptionAr ?? null,
+    keyFeatures: (listing.keyFeatures as string[]) ?? [],
+    commercialData: (listing.commercialData as Listing['commercialData']) ?? null,
+    sellerMotivation: listing.sellerMotivation,
+    offPlan: listing.offPlan,
+    titleDeedVerified: listing.titleDeedVerified,
+    titleDeedNumber: listing.titleDeedNumber ?? null,
+    verificationStatus: listing.verificationStatus,
+    sellerVerificationFeedback: listing.sellerVerificationFeedback ?? null,
+    titleDeedDocument: (listing.titleDeedDocument as Listing['titleDeedDocument']) ?? null,
+    nocDocument: (listing.nocDocument as Listing['nocDocument']) ?? null,
+    encumbranceDocument: (listing.encumbranceDocument as Listing['encumbranceDocument']) ?? null,
+    listingQualityScore: listing.listingQualityScore,
+    qualityTier: listing.qualityTier,
+    qualityTierOverride: listing.qualityTierOverride ?? null,
+    lastSellerConfirmation: listing.lastSellerConfirmation.toISOString(),
+    viewCount: listing.viewCount,
+    interestCount: listing.interestCount,
+    daysOnMarket: listing.daysOnMarket,
+    aiFraudFlag: listing.aiFraudFlag,
+    meilisearchIndexedAt: listing.meilisearchIndexedAt?.toISOString() ?? null,
+    createdAt: listing.createdAt.toISOString(),
+    updatedAt: listing.updatedAt.toISOString(),
+  };
 }
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -231,7 +330,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
           .where(eq(listingMedia.listingId, listingId));
 
         const imageUrls = media.map((m) => m.url);
-        const score = await aiService.scoreListingQuality(listing as Parameters<typeof aiService.scoreListingQuality>[0], imageUrls);
+        const score = await aiService.scoreListingQuality(toAiListing(listing as DbListingForAi), imageUrls);
 
         await db
           .update(listings)
@@ -320,7 +419,18 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const result = await aiService.getPriceRecommendation(parsed.data);
+      const recommendationInput: Partial<Listing> = {};
+      if (parsed.data.assetType) recommendationInput.assetType = parsed.data.assetType as Listing['assetType'];
+      if (parsed.data.city) recommendationInput.city = parsed.data.city;
+      if (parsed.data.country) recommendationInput.country = parsed.data.country;
+      if (parsed.data.sizeSqm !== undefined) recommendationInput.sizeSqm = parsed.data.sizeSqm.toString();
+      if (parsed.data.bedrooms !== undefined) recommendationInput.bedrooms = parsed.data.bedrooms;
+      if (parsed.data.bathrooms !== undefined) recommendationInput.bathrooms = parsed.data.bathrooms;
+      if (parsed.data.yearBuilt !== undefined) recommendationInput.yearBuilt = parsed.data.yearBuilt;
+      if (parsed.data.description) recommendationInput.description = parsed.data.description;
+      if (parsed.data.priceCurrency) recommendationInput.priceCurrency = parsed.data.priceCurrency;
+
+      const result = await aiService.getPriceRecommendation(recommendationInput);
       return reply.send(ok(result));
     } catch (err) {
       logger.error({ err }, 'Price recommendation failed');

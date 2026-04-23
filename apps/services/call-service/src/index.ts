@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
-import { createServer } from 'node:http';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -8,7 +7,7 @@ import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import * as Sentry from '@sentry/node';
 import { createLogger, createFastifyLogger } from '@vault/logger';
 import callRoutes from './routes/calls.js';
@@ -23,7 +22,7 @@ if (process.env['SENTRY_DSN']) {
   });
 }
 
-const logger = createLogger({ base: { service: 'call-service' } });
+const logger = createLogger('call-service');
 
 const PORT = parseInt(process.env['PORT'] ?? '3005', 10);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
@@ -31,7 +30,7 @@ const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 
 // ─── Fastify + HTTP Server ─────────────────────────────────────────────────────
 const fastify = Fastify({
-  logger: createFastifyLogger(),
+  logger: createFastifyLogger('call-service') as Parameters<typeof Fastify>[0]['logger'],
 });
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────
@@ -87,12 +86,17 @@ fastify.setErrorHandler((error, _request, reply) => {
     Sentry.captureException(error);
   }
 
-  const statusCode = error.statusCode ?? 500;
+  const appError = error as {
+    statusCode?: number;
+    code?: string;
+    message?: string;
+  };
+  const statusCode = appError.statusCode ?? 500;
   return reply.code(statusCode).send({
     success: false,
     error: {
-      code: error.code ?? 'INTERNAL_ERROR',
-      message: statusCode >= 500 ? 'Internal server error' : error.message,
+      code: appError.code ?? 'INTERNAL_ERROR',
+      message: statusCode >= 500 ? 'Internal server error' : (appError.message ?? 'Request failed'),
     },
   });
 });

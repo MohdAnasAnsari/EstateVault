@@ -173,6 +173,14 @@ export async function getOrCreateDealRoomForListing(
   const db = getDb();
   const listing = await getListingRow(listingId);
 
+  if (requesterId === listing.sellerId || requesterId === listing.agentId) {
+    throw new DealRoomError(
+      409,
+      'DEAL_ROOM_SELF_INTEREST_NOT_ALLOWED',
+      'This listing is already managed by your account. Buyer deal rooms open when a different qualified user expresses interest.',
+    );
+  }
+
   const [existingRoom] = await db
     .select()
     .from(dealRooms)

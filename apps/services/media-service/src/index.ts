@@ -18,11 +18,11 @@ if (process.env['SENTRY_DSN']) {
   });
 }
 
-const logger = createLogger({ base: { service: 'media-service' } });
+const appLogger = createLogger('media-service');
 
 // ─── Server Setup ─────────────────────────────────────────────────────────────
 const fastify = Fastify({
-  logger: createFastifyLogger(),
+  logger: createFastifyLogger('media-service') as Parameters<typeof Fastify>[0]['logger'],
 });
 
 const PORT = parseInt(process.env['PORT'] ?? '3004', 10);
@@ -87,17 +87,22 @@ await fastify.register(mediaRoutes, { prefix: '/media' });
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 fastify.setErrorHandler((error, _request, reply) => {
-  logger.error(error, 'Unhandled error');
+  appLogger.error(error, 'Unhandled error');
   if (process.env['SENTRY_DSN']) {
     Sentry.captureException(error);
   }
 
-  const statusCode = error.statusCode ?? 500;
+  const appError = error as {
+    statusCode?: number;
+    code?: string;
+    message?: string;
+  };
+  const statusCode = appError.statusCode ?? 500;
   return reply.code(statusCode).send({
     success: false,
     error: {
-      code: error.code ?? 'INTERNAL_ERROR',
-      message: statusCode >= 500 ? 'Internal server error' : error.message,
+      code: appError.code ?? 'INTERNAL_ERROR',
+      message: statusCode >= 500 ? 'Internal server error' : (appError.message ?? 'Request failed'),
     },
   });
 });
@@ -105,8 +110,8 @@ fastify.setErrorHandler((error, _request, reply) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 try {
   await fastify.listen({ port: PORT, host: HOST });
-  logger.info(`media-service listening on ${HOST}:${PORT}`);
+  appLogger.info(`media-service listening on ${HOST}:${PORT}`);
 } catch (err) {
-  logger.error(err, 'Failed to start media-service');
+  appLogger.error(err, 'Failed to start media-service');
   process.exit(1);
 }

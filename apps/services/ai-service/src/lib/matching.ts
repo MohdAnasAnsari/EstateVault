@@ -1,6 +1,7 @@
 import type { Db } from '@vault/db';
 import { aiService } from '@vault/ai';
 import { createLogger } from '@vault/logger';
+import type { Listing } from '@vault/types';
 import { eq, and, isNotNull } from 'drizzle-orm';
 
 const logger = createLogger('ai-service:lib:matching');
@@ -157,10 +158,10 @@ export async function refreshUserMatches(userId: string, db: Db): Promise<void> 
           {
             assetType: listing.assetType,
             city: listing.city,
-            priceAmount: listing.priceAmount !== null ? parseFloat(listing.priceAmount) : undefined,
             titleDeedVerified: listing.titleDeedVerified,
             sellerMotivation: listing.sellerMotivation,
-          },
+            ...(listing.priceAmount !== null ? { priceAmount: listing.priceAmount } : {}),
+          } satisfies Partial<Listing>,
         );
         scored.push({ listingId: listing.id, score, explanation });
       }

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  labels:
+    app: vault
+    service: analytics-service
+spec:
+  selector:
+    service: analytics-service
+  ports:
+    - port: 3008
+      targetPort: 3008
+      name: http
+  type: ClusterIP

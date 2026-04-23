@@ -1,7 +1,5 @@
 'use client';
 
-import { Button } from '@vault/ui';
-
 export default function GlobalError({
   error,
   reset,
@@ -18,9 +16,13 @@ export default function GlobalError({
             <h1 className="mt-3 text-4xl text-stone-50">Something private went sideways</h1>
             <p className="mt-4 text-sm leading-7 text-stone-300">{error.message}</p>
             <div className="mt-8 flex justify-center">
-              <Button variant="gold" onClick={reset}>
+              <button
+                type="button"
+                onClick={reset}
+                className="inline-flex items-center justify-center rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-amber-400"
+              >
                 Try again
-              </Button>
+              </button>
             </div>
           </div>
         </main>

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-service
+  labels:
+    app: vault
+    service: media-service
+spec:
+  selector:
+    service: media-service
+  ports:
+    - port: 3004
+      targetPort: 3004
+      name: http
+  type: ClusterIP

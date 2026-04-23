@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: messaging-service
+  labels:
+    app: vault
+    service: messaging-service
+spec:
+  selector:
+    service: messaging-service
+  ports:
+    - port: 3003
+      targetPort: 3003
+      name: http
+  type: ClusterIP

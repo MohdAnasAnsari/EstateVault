@@ -1,67 +1,30 @@
-# EstateVault VAULT Platform — Kubernetes Namespaces
-# Two namespaces: staging (for CI previews) and prod (for live traffic).
-# ResourceQuotas and LimitRanges prevent noisy-neighbour issues in shared clusters.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault-dev
+  labels:
+    environment: dev
+    app: vault
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: vault-staging
   labels:
-    app.kubernetes.io/part-of: vault
     environment: staging
+    app: vault
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: vault-prod
   labels:
-    app.kubernetes.io/part-of: vault
     environment: production
-
-# ── Staging ResourceQuota ──────────────────────────────────────────────────────
+    app: vault
 ---
 apiVersion: v1
-kind: ResourceQuota
+kind: Namespace
 metadata:
-  name: vault-staging-quota
-  namespace: vault-staging
-spec:
-  hard:
-    requests.cpu: "8"
-    requests.memory: 16Gi
-    limits.cpu: "16"
-    limits.memory: 32Gi
-    persistentvolumeclaims: "10"
-    services.loadbalancers: "0"    # No LBs in staging; use port-forward or Ingress
-
-# ── Production ResourceQuota ───────────────────────────────────────────────────
----
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: vault-prod-quota
-  namespace: vault-prod
-spec:
-  hard:
-    requests.cpu: "32"
-    requests.memory: 64Gi
-    limits.cpu: "64"
-    limits.memory: 128Gi
-    persistentvolumeclaims: "20"
-
-# ── Production LimitRange (per-container defaults) ─────────────────────────────
----
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: vault-prod-limits
-  namespace: vault-prod
-spec:
-  limits:
-    - type: Container
-      default:
-        cpu: 500m
-        memory: 512Mi
-      defaultRequest:
-        cpu: 100m
-        memory: 128Mi
+  name: vault-monitoring
+  labels:
+    app: vault

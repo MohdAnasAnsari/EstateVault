@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { ZodError, z } from 'zod';
@@ -45,9 +45,8 @@ function signAccessToken(
   return app.jwt.sign(payload, { expiresIn: '7d' });
 }
 
-function setAuthCookie(reply: Parameters<FastifyInstance['addHook']>[1], token: string): void {
-  // biome-ignore lint/suspicious/noExplicitAny: Fastify reply type
-  (reply as any).setCookie('vault_token', token, {
+function setAuthCookie(reply: FastifyReply, token: string): void {
+  reply.setCookie('vault_token', token, {
     httpOnly: true,
     secure: process.env['NODE_ENV'] === 'production',
     sameSite: 'strict',

@@ -8,8 +8,11 @@ const CDN_HOSTNAME = process.env['CDN_URL']
 const R2_HOSTNAME = process.env['R2_PUBLIC_URL']
   ? new URL(process.env['R2_PUBLIC_URL']).hostname
   : undefined;
+const ENABLE_STANDALONE = process.env['BUILD_STANDALONE'] === 'true';
 
 const nextConfig: NextConfig = {
+  output: ENABLE_STANDALONE ? 'standalone' : undefined,
+  outputFileTracingRoot: path.resolve(process.cwd(), '../..'),
   transpilePackages: ['@vault/ui', '@vault/api-client', '@vault/types', '@vault/crypto'],
 
   webpack: (config) => {

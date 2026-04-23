@@ -27,7 +27,7 @@ if (process.env['SENTRY_DSN']) {
 }
 
 const app = Fastify({
-  logger: createFastifyLogger('notification-service'),
+  logger: createFastifyLogger('notification-service') as Parameters<typeof Fastify>[0]['logger'],
 });
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────

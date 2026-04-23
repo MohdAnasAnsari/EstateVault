@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  labels:
+    app: vault
+    service: ai-service
+spec:
+  selector:
+    service: ai-service
+  ports:
+    - port: 3006
+      targetPort: 3006
+      name: http
+  type: ClusterIP

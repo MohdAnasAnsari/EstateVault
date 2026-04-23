@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.pnpm-store
+.turbo
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/web/.next
+apps/web/tsconfig.tsbuildinfo
+apps/services/*/dist
+apps/api/dist
+packages/*/dist
+*.log
+.env
+

@@ -28,7 +28,7 @@ if (process.env['SENTRY_DSN']) {
 }
 
 // ─── Env validation ───────────────────────────────────────────────────────────
-const jwtSecret = process.env['NEXTAUTH_SECRET'];
+const jwtSecret = process.env['NEXTAUTH_SECRET'] ?? process.env['JWT_SECRET'];
 if (!jwtSecret) throw new Error('NEXTAUTH_SECRET is not set');
 
 const PORT = Number.parseInt(process.env['PORT'] ?? '3001', 10);
@@ -96,7 +96,7 @@ async function bootstrap() {
   });
 
   // ─── JWT ──────────────────────────────────────────────────────────────────
-  await app.register(jwt, {
+  await app.register(jwt as never, {
     secret: jwtSecret,
     sign: { expiresIn: '7d' },
     cookie: {

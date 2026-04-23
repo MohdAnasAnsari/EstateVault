@@ -197,7 +197,7 @@ Important defaults:
 ### 2. Start local infrastructure
 
 ```bash
-docker compose up -d postgres redis meilisearch pgbouncer
+docker compose up -d postgres redis meilisearch
 ```
 
 ### 3. Install dependencies
@@ -238,7 +238,6 @@ pnpm --filter @vault/mobile start
 - Postgres: `localhost:5432`
 - Redis: `localhost:6379`
 - Meilisearch: `http://localhost:7700`
-- PgBouncer: `localhost:6432`
 
 ## Containerized Service Mesh
 

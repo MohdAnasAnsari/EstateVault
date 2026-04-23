@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-gateway
+          image: ghcr.io/YOUR_ORG/vault-api-gateway:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: identity-service
+          image: ghcr.io/YOUR_ORG/vault-identity-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: listing-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: listing-service
+          image: ghcr.io/YOUR_ORG/vault-listing-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: messaging-service
+          image: ghcr.io/YOUR_ORG/vault-messaging-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: media-service
+          image: ghcr.io/YOUR_ORG/vault-media-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: call-service
+          image: ghcr.io/YOUR_ORG/vault-call-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: ai-service
+          image: ghcr.io/YOUR_ORG/vault-ai-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: notification-service
+          image: ghcr.io/YOUR_ORG/vault-notification-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: analytics-service
+          image: ghcr.io/YOUR_ORG/vault-analytics-service:staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/YOUR_ORG/vault-web:staging

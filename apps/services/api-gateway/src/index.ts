@@ -1,7 +1,8 @@
 import path from 'node:path';
+import type { IncomingHttpHeaders } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -14,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 // ─── Env validation ───────────────────────────────────────────────────────────
-const jwtSecret = process.env['NEXTAUTH_SECRET'];
+const jwtSecret = process.env['JWT_SECRET'] ?? process.env['NEXTAUTH_SECRET'];
 if (!jwtSecret) throw new Error('NEXTAUTH_SECRET is not set');
 
 const PORT = Number.parseInt(process.env['PORT'] ?? '3000', 10);
@@ -127,7 +128,7 @@ async function bootstrap() {
   });
 
   // ─── JWT ──────────────────────────────────────────────────────────────────
-  await app.register(jwt, {
+  await app.register(jwt as never, {
     secret: jwtSecret,
     sign: { expiresIn: '7d' },
     cookie: {
@@ -169,7 +170,7 @@ async function bootstrap() {
   });
 
   // ─── Helper: build rewrite-headers function ───────────────────────────────
-  function withUserIdHeader(request: Parameters<Parameters<typeof httpProxy>[1]['rewriteRequestHeaders']>[0], headers: Record<string, string>): Record<string, string> {
+  function withUserIdHeader(request: FastifyRequest, headers: IncomingHttpHeaders): IncomingHttpHeaders {
     const user = request.user as JwtUser | undefined;
     if (user?.userId) {
       return { ...headers, 'x-user-id': user.userId, 'x-user-role': user.role, 'x-user-tier': user.accessTier };
@@ -177,208 +178,191 @@ async function bootstrap() {
     return headers;
   }
 
+  const authProxyOptions = {
+    replyOptions: {
+      rewriteRequestHeaders: withUserIdHeader,
+    },
+    http2: false,
+  } as const;
+
   // ─── Identity Service proxy ───────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: IDENTITY_SERVICE_URL,
     prefix: '/api/v1/auth',
     rewritePrefix: '/auth',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: IDENTITY_SERVICE_URL,
     prefix: '/api/v1/users',
     rewritePrefix: '/users',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: IDENTITY_SERVICE_URL,
     prefix: '/api/v1/kyc',
     rewritePrefix: '/kyc',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Listing Service proxy ────────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: LISTING_SERVICE_URL,
     prefix: '/api/v1/listings',
     rewritePrefix: '/listings',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: LISTING_SERVICE_URL,
     prefix: '/api/v1/off-market',
     rewritePrefix: '/off-market',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: LISTING_SERVICE_URL,
     prefix: '/api/v1/portfolio',
     rewritePrefix: '/portfolio',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Messaging Service proxy ──────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/api/v1/deal-rooms',
     rewritePrefix: '/deal-rooms',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/api/v1/messages',
     rewritePrefix: '/messages',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/api/v1/ndas',
     rewritePrefix: '/ndas',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/api/v1/offers',
     rewritePrefix: '/offers',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/api/v1/deal-teams',
     rewritePrefix: '/deal-teams',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Media Service proxy ──────────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MEDIA_SERVICE_URL,
     prefix: '/api/v1/media',
     rewritePrefix: '/media',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Call Service proxy ───────────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: CALL_SERVICE_URL,
     prefix: '/api/v1/calls',
     rewritePrefix: '/calls',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: CALL_SERVICE_URL,
     prefix: '/api/v1/meetings',
     rewritePrefix: '/meetings',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── AI Service proxy ─────────────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: AI_SERVICE_URL,
     prefix: '/api/v1/ai',
     rewritePrefix: '/ai',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: AI_SERVICE_URL,
     prefix: '/api/v1/matches',
     rewritePrefix: '/matches',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: AI_SERVICE_URL,
     prefix: '/api/v1/concierge',
     rewritePrefix: '/concierge',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: AI_SERVICE_URL,
     prefix: '/api/v1/calculator',
     rewritePrefix: '/calculator',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: AI_SERVICE_URL,
     prefix: '/api/v1/translation',
     rewritePrefix: '/translation',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Notification Service proxy ───────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: NOTIFICATION_SERVICE_URL,
     prefix: '/api/v1/notifications',
     rewritePrefix: '/notifications',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── Analytics Service proxy ──────────────────────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: ANALYTICS_SERVICE_URL,
     prefix: '/api/v1/analytics',
     rewritePrefix: '/analytics',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: ANALYTICS_SERVICE_URL,
     prefix: '/api/v1/market-intelligence',
     rewritePrefix: '/market-intelligence',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: ANALYTICS_SERVICE_URL,
     prefix: '/api/v1/currency',
     rewritePrefix: '/currency',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: ANALYTICS_SERVICE_URL,
     prefix: '/api/v1/admin',
     rewritePrefix: '/admin',
-    rewriteRequestHeaders: withUserIdHeader,
-    http2: false,
+    ...authProxyOptions,
   });
 
   // ─── WebSocket: Socket.IO → Messaging Service ─────────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: MESSAGING_SERVICE_URL,
     prefix: '/socket.io',
     rewritePrefix: '/socket.io',
@@ -387,7 +371,7 @@ async function bootstrap() {
   });
 
   // ─── WebSocket: WebRTC signaling → Call Service ───────────────────────────
-  await app.register(httpProxy, {
+  await app.register(httpProxy as never, {
     upstream: CALL_SERVICE_URL,
     prefix: '/call-signal',
     rewritePrefix: '/call-signal',
@@ -403,7 +387,7 @@ async function bootstrap() {
     try {
       const { getRedis } = await import('@vault/cache');
       const redis = getRedis();
-      await (redis as unknown as { ping(): Promise<string> }).ping();
+      await redis.ping();
       redisOk = true;
     } catch { /* redis unhealthy */ }
 

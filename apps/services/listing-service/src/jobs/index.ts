@@ -127,7 +127,10 @@ function startEmbeddingWorker(): Worker {
 
       await db
         .update(listings)
-        .set({ embedding, meilisearchIndexedAt: new Date() } as Parameters<typeof db.update>[0] extends infer T ? T : never)
+        .set({
+          embedding,
+          meilisearchIndexedAt: new Date(),
+        })
         .where(eq(listings.id, listingId));
 
       // Also sync to Meilisearch

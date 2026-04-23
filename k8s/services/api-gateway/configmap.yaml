@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+  labels:
+    app: vault
+    service: api-gateway
+data:
+  PORT: "3000"
+  NODE_ENV: "production"
+  MOCK_SERVICES: "false"
+  LOG_LEVEL: "info"
+  ALLOWED_ORIGINS: "https://vault.ae,https://www.vault.ae,https://api.vault.ae"
+  RATE_LIMIT_MAX: "200"
+  IDENTITY_SERVICE_URL: "http://identity-service:3001"
+  LISTING_SERVICE_URL: "http://listing-service:3002"
+  MESSAGING_SERVICE_URL: "http://messaging-service:3003"
+  MEDIA_SERVICE_URL: "http://media-service:3004"
+  CALL_SERVICE_URL: "http://call-service:3005"
+  AI_SERVICE_URL: "http://ai-service:3006"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3007"
+  ANALYTICS_SERVICE_URL: "http://analytics-service:3008"

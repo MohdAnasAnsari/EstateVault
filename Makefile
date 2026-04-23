@@ -40,8 +40,8 @@ dev: ## Start all apps/services in watch mode via Turborepo
 	pnpm turbo dev
 
 .PHONY: dev-infra
-dev-infra: ## Start only infrastructure containers (postgres, redis, meilisearch, pgbouncer)
-	docker compose up -d postgres redis meilisearch pgbouncer
+dev-infra: ## Start only infrastructure containers (postgres, redis, meilisearch)
+	docker compose up -d postgres redis meilisearch
 
 .PHONY: dev-services
 dev-services: ## Start all 9 microservice containers (detached)
@@ -54,7 +54,8 @@ dev-services: ## Start all 9 microservice containers (detached)
 		call-service \
 		ai-service \
 		notification-service \
-		analytics-service
+		analytics-service \
+		web
 
 # ─── Build & quality ──────────────────────────────────────────────────────────
 

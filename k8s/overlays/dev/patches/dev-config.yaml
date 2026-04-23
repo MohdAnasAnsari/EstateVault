@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+data:
+  MOCK_SERVICES: "true"
+  ALLOWED_ORIGINS: "https://dev.vault.ae,https://www.dev.vault.ae,https://api.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identity-service-config
+data:
+  MOCK_SERVICES: "true"
+  NEXTAUTH_URL: "https://dev.vault.ae"
+  ALLOWED_ORIGINS: "https://dev.vault.ae,https://www.dev.vault.ae,https://api.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: listing-service-config
+data:
+  MOCK_SERVICES: "true"
+  ALLOWED_ORIGINS: "https://dev.vault.ae,https://www.dev.vault.ae,https://api.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: messaging-service-config
+data:
+  MOCK_SERVICES: "true"
+  ALLOWED_ORIGINS: "https://dev.vault.ae,https://www.dev.vault.ae,https://api.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-service-config
+data:
+  MOCK_SERVICES: "true"
+  R2_BUCKET: "vault-assets-dev"
+  R2_PUBLIC_URL: "https://assets.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: call-service-config
+data:
+  MOCK_SERVICES: "true"
+  TURN_SERVER_URL: "turn:turn.dev.vault.ae:3478?transport=udp"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+data:
+  MOCK_SERVICES: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+data:
+  MOCK_SERVICES: "true"
+  EMAIL_FROM: "noreply@dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+data:
+  MOCK_SERVICES: "true"
+  ALLOWED_ORIGINS: "https://dev.vault.ae,https://www.dev.vault.ae,https://api.dev.vault.ae"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  MOCK_SERVICES: "true"
+  NEXT_PUBLIC_API_URL: "https://api.dev.vault.ae/api/v1"
+  NEXT_PUBLIC_SOCKET_URL: "https://api.dev.vault.ae"
+  NEXT_PUBLIC_CALL_URL: "https://api.dev.vault.ae"
+  NEXTAUTH_URL: "https://dev.vault.ae"
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY: "CHANGE_ME"
+  CDN_URL: "https://assets.dev.vault.ae"
+  R2_PUBLIC_URL: "https://assets.dev.vault.ae"

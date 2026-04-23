@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-gateway
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: identity-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 768Mi
+              cpu: 750m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: listing-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: listing-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: messaging-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: media-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: call-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: ai-service
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: 1536Mi
+              cpu: "1500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: notification-service
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: analytics-service
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 1Gi
+              cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 150m
+            limits:
+              memory: 768Mi
+              cpu: 750m

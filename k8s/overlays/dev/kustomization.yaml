@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - ../../base
+patches:
+  - path: patches/dev-replicas.yaml
+  - path: patches/dev-config.yaml
+  - path: patches/dev-ingress.yaml
+  - path: patches/dev-platform.yaml
+  - target:
+      kind: ServiceAccount
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: ConfigMap
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: Secret
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: Service
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev
+  - target:
+      kind: Ingress
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: vault-dev

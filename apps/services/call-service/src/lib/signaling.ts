@@ -2,7 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import { createLogger } from '@vault/logger';
 import jwt from 'jsonwebtoken';
 
-const logger = createLogger({ base: { service: 'call-service', module: 'signaling' } });
+const logger = createLogger('call-service', { base: { module: 'signaling' } });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,13 +11,25 @@ interface AuthenticatedSocket extends Socket {
   userRole: string;
 }
 
+interface WebRtcIceCandidate {
+  candidate: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+}
+
+interface WebRtcSessionDescription {
+  type: 'offer' | 'answer' | 'pranswer' | 'rollback';
+  sdp?: string;
+}
+
 interface IceCandidatePayload {
-  candidate: RTCIceCandidateInit;
+  candidate: WebRtcIceCandidate;
   to: string; // target socket id
 }
 
 interface SdpPayload {
-  sdp: RTCSessionDescriptionInit;
+  sdp: WebRtcSessionDescription;
   to: string; // target socket id
 }
 

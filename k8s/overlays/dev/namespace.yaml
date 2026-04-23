@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault-dev
+  labels:
+    environment: dev
+    app: vault

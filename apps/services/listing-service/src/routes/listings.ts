@@ -15,7 +15,7 @@ import {
   UpdateListingInputSchema,
 } from '@vault/types';
 import { createLogger } from '@vault/logger';
-import { eq, and, or, desc, asc, gte, lte, ilike, sql, inArray } from 'drizzle-orm';
+import { eq, and, or, desc, asc, gte, lte, ilike, sql } from 'drizzle-orm';
 import { searchListings } from '../lib/search.js';
 import { embeddingQueue, fraudCheckQueue } from '../jobs/index.js';
 
@@ -23,6 +23,10 @@ const logger = createLogger('listing-service:listings');
 
 const CHANNEL_PREFIX = process.env['REDIS_EVENT_CHANNEL_PREFIX'] ?? 'vault:';
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+type ListingUpdate = Partial<typeof listings.$inferInsert>;
+type ListingAssetType = NonNullable<typeof listings.$inferInsert['assetType']>;
+type ListingStatus = NonNullable<typeof listings.$inferInsert['status']>;
+type ListingSellerMotivation = NonNullable<typeof listings.$inferInsert['sellerMotivation']>;
 
 function createPublisher() {
   const RedisClass = IORedis as unknown as new (
@@ -220,9 +224,9 @@ export async function listingRoutes(fastify: FastifyInstance): Promise<void> {
     }
     // Admins and agents see everything
 
-    if (q.assetType) conditions.push(eq(listings.assetType, q.assetType as Parameters<typeof eq>[1]));
+    if (q.assetType) conditions.push(eq(listings.assetType, q.assetType as ListingAssetType));
     if (q.status && (user?.role === 'admin' || user?.role === 'agent'))
-      conditions.push(eq(listings.status, q.status as Parameters<typeof eq>[1]));
+      conditions.push(eq(listings.status, q.status as ListingStatus));
     if (q.priceMin) conditions.push(gte(listings.priceAmount, q.priceMin.toString()));
     if (q.priceMax) conditions.push(lte(listings.priceAmount, q.priceMax.toString()));
     if (q.areaMin) conditions.push(gte(listings.sizeSqm, q.areaMin.toString()));
@@ -236,7 +240,7 @@ export async function listingRoutes(fastify: FastifyInstance): Promise<void> {
     if (q.titleDeedVerified !== undefined)
       conditions.push(eq(listings.titleDeedVerified, q.titleDeedVerified));
     if (q.sellerMotivation)
-      conditions.push(eq(listings.sellerMotivation, q.sellerMotivation as Parameters<typeof eq>[1]));
+      conditions.push(eq(listings.sellerMotivation, q.sellerMotivation as ListingSellerMotivation));
 
     const sortMap = {
       price_asc: asc(listings.priceAmount),
@@ -425,7 +429,7 @@ export async function listingRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const input = parsed.data;
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    const updateData: ListingUpdate = { updatedAt: new Date() };
     if (input.title !== undefined) updateData['title'] = input.title;
     if (input.description !== undefined) updateData['description'] = input.description;
     if (input.descriptionAr !== undefined) updateData['descriptionAr'] = input.descriptionAr;
@@ -448,7 +452,7 @@ export async function listingRoutes(fastify: FastifyInstance): Promise<void> {
 
     const [updated] = await db
       .update(listings)
-      .set(updateData as Parameters<typeof db.update>[0] extends infer T ? T : never)
+      .set(updateData)
       .where(eq(listings.id, id))
       .returning();
 
@@ -745,7 +749,7 @@ export async function listingRoutes(fastify: FastifyInstance): Promise<void> {
       .update(listings)
       .set({
         listingQualityScore: score.score,
-        qualityTier: tier as Parameters<typeof db.update>[0] extends infer T ? T : never,
+        qualityTier: tier,
         updatedAt: new Date(),
       })
       .where(eq(listings.id, id));

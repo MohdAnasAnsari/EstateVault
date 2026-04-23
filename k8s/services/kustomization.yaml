@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - api-gateway/configmap.yaml
+  - api-gateway/deployment.yaml
+  - api-gateway/service.yaml
+  - api-gateway/hpa.yaml
+  - identity-service/configmap.yaml
+  - identity-service/deployment.yaml
+  - identity-service/service.yaml
+  - identity-service/hpa.yaml
+  - listing-service/configmap.yaml
+  - listing-service/deployment.yaml
+  - listing-service/service.yaml
+  - listing-service/hpa.yaml
+  - messaging-service/configmap.yaml
+  - messaging-service/deployment.yaml
+  - messaging-service/service.yaml
+  - messaging-service/hpa.yaml
+  - media-service/configmap.yaml
+  - media-service/deployment.yaml
+  - media-service/service.yaml
+  - media-service/hpa.yaml
+  - call-service/configmap.yaml
+  - call-service/deployment.yaml
+  - call-service/service.yaml
+  - call-service/hpa.yaml
+  - ai-service/configmap.yaml
+  - ai-service/deployment.yaml
+  - ai-service/service.yaml
+  - ai-service/hpa.yaml
+  - notification-service/configmap.yaml
+  - notification-service/deployment.yaml
+  - notification-service/service.yaml
+  - notification-service/hpa.yaml
+  - analytics-service/configmap.yaml
+  - analytics-service/deployment.yaml
+  - analytics-service/service.yaml
+  - analytics-service/hpa.yaml
+  - web/configmap.yaml
+  - web/deployment.yaml
+  - web/service.yaml
+  - web/hpa.yaml

@@ -211,7 +211,10 @@ export async function searchListings(
     hitsPerPage: limit,
   });
 
-  const total = result.estimatedTotalHits ?? result.totalHits ?? 0;
+  const total =
+    (result as { estimatedTotalHits?: number; totalHits?: number }).estimatedTotalHits ??
+    (result as { totalHits?: number }).totalHits ??
+    0;
 
   return {
     hits: result.hits as IndexableListingDoc[],

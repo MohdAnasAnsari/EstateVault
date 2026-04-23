@@ -462,10 +462,8 @@ export async function analyticsRoutes(fastify: FastifyInstance): Promise<void> {
     const offersSubmitted = offersResult[0]?.count ?? 0;
     const meetingsHeld = (meetingsResult as unknown as Array<{ count: number }>)[0]?.count ?? 0;
 
-    const messagesPerDay = daysActive > 0 ? totalMessages / daysActive : 0;
-
     const signals = {
-      messagesPerDay,
+      messagesCount: totalMessages,
       docsUploaded,
       offersSubmitted,
       meetingsHeld,

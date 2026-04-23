@@ -1,25 +1,20 @@
-version: '3.9'
+networks:
+  vault-network:
+    driver: bridge
 
-# ─── EstateVault – local development compose ──────────────────────────────────
-# Infrastructure + all 9 microservices.
-# Use docker-compose.override.yml for hot-reload source mounts (applied automatically).
+volumes:
+  postgres_data:
+  redis_data:
+  meilisearch_data:
 
 x-service-defaults: &service-defaults
+  networks:
+    - vault-network
   restart: unless-stopped
-  env_file: .env
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
 
 services:
-
-  # ─── Infrastructure ──────────────────────────────────────────────────────────
-
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: vault_postgres
     environment:
       POSTGRES_USER: vault
       POSTGRES_PASSWORD: vault
@@ -33,11 +28,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - vault-network
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: vault_redis
+    command: redis-server --appendonly yes
     ports:
       - '6379:6379'
     volumes:
@@ -47,13 +44,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - vault-network
     restart: unless-stopped
 
   meilisearch:
     image: getmeili/meilisearch:latest
-    container_name: vault_meilisearch
     environment:
-      MEILI_MASTER_KEY: masterKey
+      MEILI_MASTER_KEY: masterKey_dev_only
+      MEILI_ENV: development
       MEILI_NO_ANALYTICS: 'true'
     ports:
       - '7700:7700'
@@ -64,16 +63,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - vault-network
     restart: unless-stopped
 
   pgbouncer:
     image: bitnami/pgbouncer:latest
-    container_name: vault_pgbouncer
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      POSTGRESQL_HOST: vault_postgres
+      POSTGRESQL_HOST: postgres
       POSTGRESQL_PORT: '5432'
       POSTGRESQL_DATABASE: vault_dev
       POSTGRESQL_USERNAME: vault
@@ -91,184 +91,217 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - vault-network
     restart: unless-stopped
-
-  # ─── Microservices ───────────────────────────────────────────────────────────
 
   api-gateway:
     <<: *service-defaults
-    container_name: vault_api_gateway
     build:
-      context: ./apps/services/api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/services/api-gateway/Dockerfile
     ports:
       - '3000:3000'
     environment:
       PORT: '3000'
-    volumes:
-      - ./apps/services/api-gateway/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      SESSION_SECRET: dev_session_secret
+      ALLOWED_ORIGINS: http://localhost:3010
+      IDENTITY_SERVICE_URL: http://identity-service:3001
+      LISTING_SERVICE_URL: http://listing-service:3002
+      MESSAGING_SERVICE_URL: http://messaging-service:3003
+      MEDIA_SERVICE_URL: http://media-service:3004
+      CALL_SERVICE_URL: http://call-service:3005
+      AI_SERVICE_URL: http://ai-service:3006
+      NOTIFICATION_SERVICE_URL: http://notification-service:3007
+      ANALYTICS_SERVICE_URL: http://analytics-service:3008
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
 
   identity-service:
     <<: *service-defaults
-    container_name: vault_identity_service
     build:
-      context: ./apps/services/identity-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/services/identity-service/Dockerfile
     ports:
       - '3001:3001'
     environment:
       PORT: '3001'
-    volumes:
-      - ./apps/services/identity-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: http://localhost:3010
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      SESSION_SECRET: dev_session_secret
+      ALLOWED_ORIGINS: http://localhost:3010
+      BCRYPT_ROUNDS: '12'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   listing-service:
     <<: *service-defaults
-    container_name: vault_listing_service
     build:
-      context: ./apps/services/listing-service
-      dockerfile: Dockerfile
-    ports:
-      - '3002:3002'
+      context: .
+      dockerfile: apps/services/listing-service/Dockerfile
     environment:
       PORT: '3002'
-    volumes:
-      - ./apps/services/listing-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3002/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      ALLOWED_ORIGINS: http://localhost:3010
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILISEARCH_API_KEY: masterKey_dev_only
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
 
   messaging-service:
     <<: *service-defaults
-    container_name: vault_messaging_service
     build:
-      context: ./apps/services/messaging-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/services/messaging-service/Dockerfile
     ports:
       - '3003:3003'
     environment:
       PORT: '3003'
-    volumes:
-      - ./apps/services/messaging-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3003/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      ALLOWED_ORIGINS: http://localhost:3010,http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   media-service:
     <<: *service-defaults
-    container_name: vault_media_service
     build:
-      context: ./apps/services/media-service
-      dockerfile: Dockerfile
-    ports:
-      - '3004:3004'
+      context: .
+      dockerfile: apps/services/media-service/Dockerfile
     environment:
       PORT: '3004'
-    volumes:
-      - ./apps/services/media-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3004/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      R2_BUCKET: vault-assets-dev
+      R2_ACCOUNT_ID: mock-account
+      R2_ACCESS_KEY_ID: mock-access-key
+      R2_SECRET_ACCESS_KEY: mock-secret-key
+      R2_PUBLIC_URL: https://example.invalid/vault-assets-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   call-service:
     <<: *service-defaults
-    container_name: vault_call_service
     build:
-      context: ./apps/services/call-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/services/call-service/Dockerfile
     ports:
       - '3005:3005'
     environment:
       PORT: '3005'
-    volumes:
-      - ./apps/services/call-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3005/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   ai-service:
     <<: *service-defaults
-    container_name: vault_ai_service
     build:
-      context: ./apps/services/ai-service
-      dockerfile: Dockerfile
-    ports:
-      - '3006:3006'
+      context: .
+      dockerfile: apps/services/ai-service/Dockerfile
     environment:
       PORT: '3006'
-    volumes:
-      - ./apps/services/ai-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3006/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      OPENAI_API_KEY: ''
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   notification-service:
     <<: *service-defaults
-    container_name: vault_notification_service
     build:
-      context: ./apps/services/notification-service
-      dockerfile: Dockerfile
-    ports:
-      - '3007:3007'
+      context: .
+      dockerfile: apps/services/notification-service/Dockerfile
     environment:
       PORT: '3007'
-    volumes:
-      - ./apps/services/notification-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3007/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      SENDGRID_API_KEY: ''
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   analytics-service:
     <<: *service-defaults
-    container_name: vault_analytics_service
     build:
-      context: ./apps/services/analytics-service
-      dockerfile: Dockerfile
-    ports:
-      - '3008:3008'
+      context: .
+      dockerfile: apps/services/analytics-service/Dockerfile
     environment:
       PORT: '3008'
-    volumes:
-      - ./apps/services/analytics-service/src:/app/src
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3008/health']
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      NODE_ENV: development
+      MOCK_SERVICES: 'true'
+      DATABASE_URL: postgresql://vault:vault@postgres:5432/vault_dev
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      ALLOWED_ORIGINS: http://localhost:3010
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-# ─── Named volumes ────────────────────────────────────────────────────────────
-
-volumes:
-  postgres_data:
-  redis_data:
-  meilisearch_data:
+  web:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '3010:3000'
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:3003
+      NEXT_PUBLIC_CALL_URL: http://localhost:3005
+      NEXTAUTH_URL: http://localhost:3010
+      NEXTAUTH_SECRET: dev_nextauth_secret
+      MOCK_SERVICES: 'true'
+    depends_on:
+      api-gateway:
+        condition: service_healthy

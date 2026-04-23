@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  labels:
+    app: vault
+    service: notification-service
+spec:
+  selector:
+    service: notification-service
+  ports:
+    - port: 3007
+      targetPort: 3007
+      name: http
+  type: ClusterIP

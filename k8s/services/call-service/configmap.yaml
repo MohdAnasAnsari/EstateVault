@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: call-service-config
+  labels:
+    app: vault
+    service: call-service
+data:
+  PORT: "3005"
+  NODE_ENV: "production"
+  MOCK_SERVICES: "false"
+  LOG_LEVEL: "info"
+  REDIS_EVENT_CHANNEL_PREFIX: "vault:"
+  TURN_SERVER_URL: "turn:turn.vault.ae:3478?transport=udp"
+  STUN_SERVER_URL: "stun:stun.cloudflare.com:3478"

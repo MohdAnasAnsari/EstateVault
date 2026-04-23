@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 import type { Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import { createClient } from 'ioredis';
+import { Redis } from 'ioredis';
 import {
   SocketCallAnswerSchema,
   SocketCallEndSchema,
@@ -224,12 +224,11 @@ export async function registerDealRoomRealtime(app: FastifyInstance): Promise<vo
   // Redis adapter for horizontal scaling
   if (process.env['REDIS_URL']) {
     try {
-      const pubClient = new createClient({ lazyConnect: true } as never);
-      const subClient = pubClient.duplicate() as unknown as ReturnType<typeof createClient>;
       const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-      await (pubClient as unknown as { connect: (url: string) => Promise<void> }).connect(redisUrl);
-      await (subClient as unknown as { connect: (url: string) => Promise<void> }).connect(redisUrl);
-      io.adapter(createAdapter(pubClient as never, subClient as never));
+      const pubClient = new Redis(redisUrl, { lazyConnect: true });
+      const subClient = pubClient.duplicate();
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+      io.adapter(createAdapter(pubClient, subClient));
       app.log.info('Socket.IO Redis adapter attached');
     } catch (err) {
       app.log.warn({ err }, 'Socket.IO Redis adapter failed, using in-memory fallback');

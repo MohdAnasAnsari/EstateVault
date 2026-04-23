@@ -13,6 +13,7 @@ import { createLogger } from '@vault/logger';
 import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 
 const logger = createLogger('listing-service:portfolio');
+type PortfolioEntryUpdate = Partial<typeof portfolioEntries.$inferInsert>;
 
 interface RequestUser {
   id: string;
@@ -210,14 +211,14 @@ export async function portfolioRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const input = parsed.data;
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    const updateData: PortfolioEntryUpdate = { updatedAt: new Date() };
 
     if (input.stage !== undefined) updateData['stage'] = input.stage;
     if (input.customLabel !== undefined) updateData['customLabel'] = input.customLabel;
 
     const [updated] = await db
       .update(portfolioEntries)
-      .set(updateData as Parameters<typeof db.update>[0] extends infer T ? T : never)
+      .set(updateData)
       .where(eq(portfolioEntries.id, id))
       .returning();
 

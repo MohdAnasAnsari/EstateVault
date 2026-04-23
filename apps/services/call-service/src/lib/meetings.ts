@@ -1,4 +1,9 @@
-import ical from 'ical-generator';
+import ical, {
+  ICalAttendeeRole,
+  ICalAttendeeStatus,
+  type ICalAttendeeData,
+  type ICalEventData,
+} from 'ical-generator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,8 +96,8 @@ export function generateIcal(meeting: MeetingForIcal): string {
   const summary = meetingTypeLabel[meeting.meetingType] ?? meeting.meetingType;
   const description = `EstateVault ${summary} — Deal Room ${meeting.dealRoomId}`;
 
-  const eventData: Parameters<typeof calendar.createEvent>[0] = {
-    uid: meeting.icsUid,
+  const eventData: ICalEventData = {
+    id: meeting.icsUid,
     start: startTime,
     end: endTime,
     summary,
@@ -110,11 +115,11 @@ export function generateIcal(meeting: MeetingForIcal): string {
   }
 
   if (meeting.attendeeEmails && meeting.attendeeEmails.length > 0) {
-    eventData.attendees = meeting.attendeeEmails.map((email) => ({
+    eventData.attendees = meeting.attendeeEmails.map((email): ICalAttendeeData => ({
       email,
       rsvp: true,
-      partstat: 'ACCEPTED' as const,
-      role: 'REQ-PARTICIPANT' as const,
+      status: ICalAttendeeStatus.ACCEPTED,
+      role: ICalAttendeeRole.REQ,
     }));
   }
 

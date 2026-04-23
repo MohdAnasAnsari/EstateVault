@@ -8,6 +8,7 @@ import { createLogger } from '@vault/logger';
 import { eq, and, desc, asc } from 'drizzle-orm';
 
 const logger = createLogger('listing-service:off-market');
+type BuyerBriefUpdate = Partial<typeof buyerBriefs.$inferInsert>;
 
 interface RequestUser {
   id: string;
@@ -176,7 +177,7 @@ export async function offMarketRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const input = parsed.data;
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    const updateData: BuyerBriefUpdate = { updatedAt: new Date() };
 
     if (input.title !== undefined) updateData['title'] = input.title;
     if (input.status !== undefined) updateData['status'] = input.status;
@@ -193,7 +194,7 @@ export async function offMarketRoutes(fastify: FastifyInstance): Promise<void> {
 
     const [updated] = await db
       .update(buyerBriefs)
-      .set(updateData as Parameters<typeof db.update>[0] extends infer T ? T : never)
+      .set(updateData)
       .where(eq(buyerBriefs.id, id))
       .returning();
 

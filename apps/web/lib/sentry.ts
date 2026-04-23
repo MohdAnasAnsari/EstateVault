@@ -8,9 +8,7 @@ export function initSentry() {
     dsn,
     environment: process.env['NODE_ENV'] ?? 'development',
     tracesSampleRate: process.env['NODE_ENV'] === 'production' ? 0.1 : 1.0,
-    replaysSessionSampleRate: 0.05,
-    replaysOnErrorSampleRate: 1.0,
-    integrations: [Sentry.replayIntegration()],
+    integrations: [Sentry.browserTracingIntegration()],
   });
 }
 

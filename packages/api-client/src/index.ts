@@ -121,9 +121,12 @@ export class VaultApiClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     const token = this.getToken();
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
+
+    if (options.body !== undefined && !(options.body instanceof FormData) && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -140,14 +143,14 @@ export class VaultApiClient {
   private post<T>(path: string, body?: unknown) {
     return this.request<T>(path, {
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   }
 
   private patch<T>(path: string, body?: unknown) {
     return this.request<T>(path, {
       method: 'PATCH',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   }
 

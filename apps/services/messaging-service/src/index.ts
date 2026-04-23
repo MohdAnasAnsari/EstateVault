@@ -8,7 +8,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import * as Sentry from '@sentry/node';
 import { createFastifyLogger, createLogger } from '@vault/logger';
 
@@ -37,18 +37,24 @@ if (SENTRY_DSN) {
   log.info('Sentry initialised');
 }
 
-const ALLOWED_ORIGINS = [
+const DEFAULT_ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
+  'http://localhost:3010',
   'https://estatevault.com',
   'https://app.estatevault.com',
 ];
 
+const ALLOWED_ORIGINS = (process.env['ALLOWED_ORIGINS'] ?? DEFAULT_ALLOWED_ORIGINS.join(','))
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 async function build() {
   const app = Fastify({
-    logger: createFastifyLogger('messaging-service'),
+    logger: createFastifyLogger('messaging-service') as Parameters<typeof Fastify>[0]['logger'],
     trustProxy: true,
   });
 
@@ -120,14 +126,19 @@ async function build() {
     log.error({ err: error }, 'Unhandled error');
     if (SENTRY_DSN) Sentry.captureException(error);
 
-    const statusCode = error.statusCode ?? 500;
+    const appError = error as {
+      statusCode?: number;
+      code?: string;
+      message?: string;
+    };
+    const statusCode = appError.statusCode ?? 500;
     return reply.status(statusCode).send({
       success: false,
       error: {
-        code: error.code ?? 'INTERNAL_ERROR',
+        code: appError.code ?? 'INTERNAL_ERROR',
         message:
           statusCode < 500
-            ? error.message
+            ? (appError.message ?? 'Request failed')
             : 'An unexpected error occurred. Please try again later.',
       },
     });
@@ -143,8 +154,8 @@ async function start() {
   const pubClient = new Redis(REDIS_URL);
   const subClient = pubClient.duplicate();
 
-  pubClient.on('error', (err) => log.error({ err }, 'Redis pub error'));
-  subClient.on('error', (err) => log.error({ err }, 'Redis sub error'));
+  pubClient.on('error', (err: Error) => log.error({ err }, 'Redis pub error'));
+  subClient.on('error', (err: Error) => log.error({ err }, 'Redis sub error'));
 
   const io = new Server(app.server, {
     cors: {
@@ -161,7 +172,7 @@ async function start() {
 
   // ── Redis pub/sub event forwarding ───────────────────────────────────────
   const eventsClient = pubClient.duplicate();
-  eventsClient.on('error', (err) => log.error({ err }, 'Redis events subscriber error'));
+  eventsClient.on('error', (err: Error) => log.error({ err }, 'Redis events subscriber error'));
 
   await eventsClient.subscribe(
     `${CHANNEL_PREFIX}deal_room.created`,

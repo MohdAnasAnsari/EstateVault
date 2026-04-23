@@ -102,6 +102,15 @@ export async function dealRoomRoutes(app: FastifyInstance) {
     const { listingId, sellerId, agentId, ndaTemplateVersion } = parsed.data;
     const db = getDb();
 
+    if (userId === sellerId || userId === agentId) {
+      return err(
+        reply,
+        'SELF_INTEREST_NOT_ALLOWED',
+        'This listing is already managed by your account. Buyer deal rooms open when another qualified user expresses interest.',
+        409,
+      );
+    }
+
     // Check if a room already exists for this listing+buyer pair
     const existing = await db
       .select({ id: dealRooms.id })

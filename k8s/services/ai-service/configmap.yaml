@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+  labels:
+    app: vault
+    service: ai-service
+data:
+  PORT: "3006"
+  NODE_ENV: "production"
+  MOCK_SERVICES: "false"
+  LOG_LEVEL: "info"
+  REDIS_EVENT_CHANNEL_PREFIX: "vault:"

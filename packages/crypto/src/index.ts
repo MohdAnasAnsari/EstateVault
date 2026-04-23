@@ -1,10 +1,13 @@
-import _sodium from 'libsodium-wrappers';
+import type sodiumModule from 'libsodium-wrappers';
 
 const PBKDF2_ITERATIONS = 100_000;
 const PRIVATE_KEY_SALT_BYTES = 16;
 const AES_KEY_BYTES = 32;
 const AES_GCM_IV_BYTES = 12;
 const PRIVATE_KEY_PAYLOAD_VERSION = 1;
+type SodiumModule = typeof sodiumModule;
+
+let sodiumPromise: Promise<SodiumModule> | null = null;
 
 export interface RawKeyPair {
   publicKey: string;
@@ -42,9 +45,32 @@ interface WrappedFileKeyPayload {
   nonce: string;
 }
 
+async function loadSodium(): Promise<SodiumModule> {
+  if (!sodiumPromise) {
+    sodiumPromise =
+      typeof window === 'undefined'
+        ? loadNodeSodium()
+        : import('libsodium-wrappers').then(
+            (module) => (module.default ?? module) as SodiumModule,
+          );
+  }
+
+  return sodiumPromise;
+}
+
+async function loadNodeSodium(): Promise<SodiumModule> {
+  // The ESM entry shipped by libsodium-wrappers 0.7.16 is missing a sibling file
+  // on Node in this workspace, so the server path intentionally uses the CJS export.
+  const moduleName = 'node:module';
+  const { createRequire } = (await import(moduleName)) as typeof import('node:module');
+  const require = createRequire(import.meta.url);
+  return require('libsodium-wrappers') as SodiumModule;
+}
+
 async function getSodium() {
-  await _sodium.ready;
-  return _sodium;
+  const sodium = await loadSodium();
+  await sodium.ready;
+  return sodium;
 }
 
 function getCrypto(): typeof globalThis.crypto {

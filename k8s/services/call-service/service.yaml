@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: call-service
+  labels:
+    app: vault
+    service: call-service
+spec:
+  selector:
+    service: call-service
+  ports:
+    - port: 3005
+      targetPort: 3005
+      name: http
+  type: ClusterIP

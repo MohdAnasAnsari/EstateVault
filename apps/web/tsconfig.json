@@ -9,14 +9,19 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
+    "preserveSymlinks": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "types": ["node", "react", "react-dom", "react/experimental", "react-dom/experimental"],
     "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@socket.io/component-emitter": ["../../node_modules/.pnpm/node_modules/@socket.io/component-emitter"],
+      "engine.io-client": ["../../node_modules/.pnpm/node_modules/engine.io-client"],
+      "socket.io-parser": ["../../node_modules/.pnpm/node_modules/socket.io-parser"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
